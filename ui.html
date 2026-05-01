@@ -1,0 +1,2146 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, Arial, sans-serif;
+      font-size: 11px;
+      background: #2e2e2e;
+      color: #f2f2f2;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #2e2e2e;
+      color: #f2f2f2;
+      overflow: hidden;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: #303030;
+      border: 1px solid #1f1f1f;
+    }
+
+    .status {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      align-items: center;
+      min-height: 42px;
+      padding: 6px 10px;
+      background: #303030;
+      border-bottom: 1px solid #424242;
+    }
+
+    .thumb {
+      width: 24px;
+      height: 24px;
+      border: 2px solid #efefef;
+      background: linear-gradient(135deg, #fafafa, #dfe6ff);
+      box-shadow: inset 0 0 0 2px #8c8aff;
+    }
+
+    .status-title {
+      color: #fff;
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 15px;
+    }
+
+    .status-subtitle {
+      color: #c8c8c8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 6px 10px;
+      background: #292929;
+      border-bottom: 1px solid #424242;
+    }
+
+    .panel {
+      flex: 1;
+      overflow-y: auto;
+      border-bottom: 1px solid #242424;
+    }
+
+    .footer {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      align-items: center;
+      height: 34px;
+      padding: 4px 7px;
+      background: #303030;
+      border-top: 1px solid #424242;
+    }
+
+    .print-warnings {
+      display: grid;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .print-warning {
+      padding: 5px 6px;
+      border: 1px solid #5a5140;
+      border-radius: 3px;
+      color: #f3d79b;
+      background: #302b22;
+      line-height: 14px;
+    }
+
+    .print-ok {
+      padding: 5px 6px;
+      border: 1px solid #3d5a46;
+      border-radius: 3px;
+      color: #b9efc7;
+      background: #223027;
+    }
+
+    .command-btn {
+      width: 100%;
+      min-height: 28px;
+    }
+
+    button {
+      min-height: 24px;
+      border: 1px solid #505050;
+      border-radius: 2px;
+      padding: 0 8px;
+      color: #f0f0f0;
+      background: #3a3a3a;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #454545;
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .footer-btn {
+      min-height: 26px;
+      border-color: transparent;
+      background: transparent;
+      color: #f0f0f0;
+      font-size: 12px;
+      padding: 0 4px;
+    }
+
+    .footer-btn.active,
+    .footer-btn:hover {
+      background: #454545;
+    }
+
+    .icon-svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+      margin: 0 auto;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .icon-svg.fill-icon {
+      fill: currentColor;
+      stroke: currentColor;
+    }
+
+    .fx-label {
+      display: block;
+      font-size: 16px;
+      font-style: italic;
+      line-height: 16px;
+    }
+
+    .danger {
+      color: #ff9a9a;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 30px 22px 1fr 34px;
+      align-items: center;
+      min-height: 34px;
+      background: #303030;
+      border-bottom: 1px solid #424242;
+      cursor: default;
+    }
+
+    .row.selected {
+      background: #38556b;
+    }
+
+    .row.drop-before {
+      box-shadow: inset 0 2px 0 #8aa4ff;
+    }
+
+    .row.disabled {
+      opacity: 0.48;
+    }
+
+    .row.child {
+      grid-template-columns: 30px 48px 1fr 34px;
+      background: #303030;
+    }
+
+    .row.object {
+      grid-template-columns: 30px 22px 1fr 34px;
+      background: #292929;
+      min-height: 38px;
+    }
+
+    .row.opacity-row {
+      grid-template-columns: 30px 48px 1fr 34px;
+      min-height: 30px;
+      background: #2b2b2b;
+    }
+
+    .eye {
+      display: grid;
+      place-items: center;
+      height: 100%;
+      border-right: 1px solid #424242;
+      color: #e0e0e0;
+      font-size: 12px;
+      user-select: none;
+    }
+
+    .caret {
+      display: grid;
+      place-items: center;
+      color: #d8d8d8;
+      font-size: 12px;
+      user-select: none;
+    }
+
+    .label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      color: #f4f4f4;
+      font-size: 12px;
+      line-height: 15px;
+    }
+
+    .label-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      border-bottom: 1px dotted #aaa;
+    }
+
+    .muted {
+      color: #c7c7c7;
+    }
+
+    .summary {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #cfcfcf;
+      font-size: 11px;
+    }
+
+    .swatch {
+      width: 22px;
+      height: 22px;
+      border: 2px solid #f1f1f1;
+      box-shadow: inset 0 0 0 2px #111;
+      flex: 0 0 auto;
+    }
+
+    .fx-mark {
+      font-size: 16px;
+      font-style: italic;
+      color: #d0d0d0;
+    }
+
+    .details {
+      display: grid;
+      gap: 4px;
+      padding: 4px 6px 6px 52px;
+      background: #272727;
+      border-bottom: 1px solid #424242;
+    }
+
+    .fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px;
+      align-items: end;
+    }
+
+    .fields.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .fields.four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .fields.paint-row {
+      grid-template-columns: minmax(80px, 1.4fr) minmax(58px, 0.65fr) minmax(92px, 1fr);
+    }
+
+    .fields.object-row {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .fields.global-row {
+      grid-template-columns: minmax(120px, 1fr) 62px;
+    }
+
+    .field {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .field-note {
+      padding: 5px 6px;
+      border: 1px solid #5a5140;
+      border-radius: 3px;
+      color: #f3d79b;
+      background: #302b22;
+      line-height: 14px;
+    }
+
+    label {
+      color: #bdbdbd;
+      font-size: 9px;
+      line-height: 11px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      height: 20px;
+      border: 1px solid #555;
+      border-radius: 2px;
+      background: #1f1f1f;
+      color: #f8f8f8;
+      padding: 0 5px;
+      outline: none;
+      font-size: 11px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 44px;
+      max-height: 120px;
+      resize: vertical;
+      border: 1px solid #555;
+      border-radius: 2px;
+      background: #1f1f1f;
+      color: #f8f8f8;
+      padding: 5px 6px;
+      font: inherit;
+      outline: none;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: #8aa4ff;
+      box-shadow: 0 0 0 1px #8aa4ff;
+    }
+
+    input[type="color"] {
+      padding: 2px;
+    }
+
+    input[type="checkbox"] {
+      width: 12px;
+      height: 12px;
+      padding: 0;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 20px;
+      color: #f0f0f0;
+    }
+
+    .empty {
+      padding: 16px 12px;
+      color: #c9c9c9;
+      line-height: 17px;
+      border-bottom: 1px solid #424242;
+    }
+
+    .fx-menu {
+      position: absolute;
+      left: 92px;
+      bottom: 36px;
+      width: 184px;
+      max-height: 330px;
+      overflow-y: auto;
+      padding: 5px;
+      border: 1px solid #8a8a8a;
+      border-radius: 5px;
+      background: #f2f2f2;
+      color: #101010;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+      z-index: 5;
+    }
+
+    .fx-menu[hidden] {
+      display: none;
+    }
+
+    .fx-menu-title {
+      padding: 5px 8px;
+      color: #8e8e8e;
+      font-size: 11px;
+    }
+
+    .fx-item {
+      display: block;
+      width: 100%;
+      min-height: 28px;
+      border: 0;
+      border-radius: 3px;
+      background: transparent;
+      color: #111;
+      text-align: left;
+      font-size: 12px;
+    }
+
+    .fx-item:hover {
+      background: #d9e8ff;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      background: rgba(0, 0, 0, 0.42);
+      z-index: 10;
+    }
+
+    .modal-backdrop[hidden] {
+      display: none;
+    }
+
+    .modal-card {
+      width: 100%;
+      max-height: 100%;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #666;
+      border-radius: 6px;
+      background: #2f2f2f;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: grid;
+      grid-template-columns: 1fr 28px;
+      align-items: center;
+      min-height: 34px;
+      padding: 4px 8px 4px 10px;
+      border-bottom: 1px solid #454545;
+      background: #353535;
+    }
+
+    .modal-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .modal-close {
+      width: 26px;
+      min-height: 26px;
+      padding: 0;
+      border-color: transparent;
+      background: transparent;
+    }
+
+    .modal-body {
+      display: grid;
+      gap: 7px;
+      padding: 8px;
+      overflow: auto;
+    }
+
+    .modal-section {
+      display: grid;
+      gap: 4px;
+      padding: 7px;
+      border: 1px solid #444;
+      border-radius: 3px;
+      background: #282828;
+    }
+
+    .modal-section-title {
+      color: #f4f4f4;
+      font-size: 11px;
+      font-weight: 650;
+      line-height: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <div class="status">
+      <div class="thumb"></div>
+      <div>
+        <div class="status-title">Type</div>
+        <div id="status" class="status-subtitle">Select one object to begin.</div>
+      </div>
+    </div>
+
+    <div class="bar">
+      <button id="wrap" title="Create stack"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="5" y="5" width="11" height="11"></rect><path d="M16 8h4"></path><path d="M18 6v4"></path></svg></button>
+      <button id="detach" class="danger" title="Detach"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M9 7H7a5 5 0 0 0 0 10h2"></path><path d="M15 7h2a5 5 0 0 1 0 10h-2"></path><path d="M8 12h8"></path><path d="M4 4l16 16"></path></svg></button>
+    </div>
+
+    <section id="content" class="panel"></section>
+
+    <div class="footer">
+      <button class="footer-btn" data-add="fill" title="Add fill"><svg class="icon-svg fill-icon" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
+      <button class="footer-btn" data-add="stroke" title="Add stroke"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
+      <button class="footer-btn" id="fx" title="Add effect to selected stack"><span class="fx-label">fx</span></button>
+      <button class="footer-btn" id="duplicate-layer" title="Duplicate selected stack"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10"></rect><path d="M5 15V5h10"></path></svg></button>
+      <button class="footer-btn" id="copy-style" title="Copy appearance"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10"></rect><rect x="5" y="5" width="10" height="10"></rect></svg></button>
+      <button class="footer-btn" id="paste-style" title="Paste appearance"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M8 5h8"></path><path d="M9 3h6l1 2h3v16H5V5h3z"></path><path d="M8 10h8"></path><path d="M8 14h8"></path></svg></button>
+      <button class="footer-btn" id="basic" title="Reduce to basic appearance"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"></circle><path d="M12 5v14"></path></svg></button>
+      <button class="footer-btn" id="print-export" title="Print export"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M7 8V4h10v4"></path><path d="M6 17H4V9h16v8h-2"></path><path d="M7 14h10v6H7z"></path><path d="M8 11h.01"></path></svg></button>
+      <button class="footer-btn danger" id="clear" title="Clear appearance"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"></circle><path d="M7 17L17 7"></path></svg></button>
+      <button class="footer-btn danger" id="delete-layer" title="Delete selected stack"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M6 7h12"></path><path d="M10 7V5h4v2"></path><path d="M8 7l1 13h6l1-13"></path></svg></button>
+    </div>
+
+    <div class="fx-menu" id="fx-menu" hidden>
+      <div class="fx-menu-title">Figma Effects</div>
+      <button class="fx-item" data-fx-kind="dropShadow">Drop Shadow</button>
+      <button class="fx-item" data-fx-kind="innerShadow">Inner Shadow</button>
+      <button class="fx-item" data-fx-kind="outerGlow">Outer Glow</button>
+      <button class="fx-item" data-fx-kind="innerGlow">Inner Glow</button>
+      <button class="fx-item" data-fx-kind="layerBlur">Layer Blur</button>
+      <button class="fx-item" data-fx-kind="backgroundBlur">Background Blur</button>
+      <button class="fx-item" data-fx-kind="noise">Noise</button>
+      <button class="fx-item" data-fx-kind="texture">Texture</button>
+      <button class="fx-item" data-fx-kind="glass">Glass</button>
+      <div class="fx-menu-title">Render Pipeline</div>
+      <button class="fx-item" data-fx-kind="offsetPath">Offset Path</button>
+      <button class="fx-item" data-fx-kind="roundCorners">Round Corners</button>
+      <button class="fx-item" data-fx-kind="feather">Feather</button>
+      <button class="fx-item" data-fx-kind="convertShape">Convert to Shape</button>
+      <button class="fx-item" data-fx-kind="colorHalftone">Color Halftone</button>
+      <button class="fx-item" data-fx-kind="scribble">Scribble</button>
+      <button class="fx-item" data-fx-kind="transform">Transform</button>
+    </div>
+
+    <div class="modal-backdrop" id="editor-modal" hidden>
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title" id="modal-title">Edit</div>
+          <button class="modal-close" id="modal-close" title="Close"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg></button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+const state = {
+      hasSelection: false,
+      selectedCount: 0,
+      isAppearance: false,
+      groupName: "",
+      baseName: "",
+      baseType: "",
+      isTextBase: false,
+      textContent: "",
+      textProperties: null,
+      availableFonts: [],
+      objectProperties: null,
+      globalAppearance: {
+        opacity: 100,
+        blendMode: "NORMAL"
+      },
+      stack: []
+    };
+
+    const expanded = {};
+    const pendingTimers = {};
+    const pendingMessages = {};
+    const trashIcon = '<svg class="icon-svg" viewBox="0 0 24 24"><path d="M6 7h12"></path><path d="M10 7V5h4v2"></path><path d="M8 7l1 13h6l1-13"></path></svg>';
+    const editIcon = '<svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
+    let dirtyWhileEditing = false;
+    let selectedLayerId = "";
+    let fxMenuOpen = false;
+    const printSettings = {
+      profile: "U.S. Web Coated (SWOP) v2",
+      pdfTarget: "PDF/X-4 intent",
+      bleedMm: 3,
+      safeMm: 3,
+      dpi: 300,
+      trimWidthMm: 210,
+      trimHeightMm: 297,
+      blackPolicy: "100K text, rich black only for large solids"
+    };
+    const modalState = {
+      kind: "",
+      layerId: "",
+      effectId: ""
+    };
+
+    const appEl = document.getElementById("app");
+    const statusEl = document.getElementById("status");
+    const contentEl = document.getElementById("content");
+    const wrapBtn = document.getElementById("wrap");
+    const detachBtn = document.getElementById("detach");
+    const fxBtn = document.getElementById("fx");
+    const fxMenu = document.getElementById("fx-menu");
+    const duplicateBtn = document.getElementById("duplicate-layer");
+    const deleteBtn = document.getElementById("delete-layer");
+    const copyStyleBtn = document.getElementById("copy-style");
+    const pasteStyleBtn = document.getElementById("paste-style");
+    const basicBtn = document.getElementById("basic");
+    const printExportBtn = document.getElementById("print-export");
+    const clearBtn = document.getElementById("clear");
+    const editorModal = document.getElementById("editor-modal");
+    const modalTitle = document.getElementById("modal-title");
+    const modalBody = document.getElementById("modal-body");
+    const modalClose = document.getElementById("modal-close");
+    let draggedLayerId = "";
+
+wrapBtn.onclick = function () {
+      selectedLayerId = "";
+      post({ type: "wrap-selection" });
+    };
+
+    detachBtn.onclick = function () {
+      selectedLayerId = "";
+      post({ type: "detach" });
+    };
+
+    duplicateBtn.onclick = function () {
+      const layer = selectedLayer();
+      if (layer) {
+        selectedLayerId = "";
+        post({ type: "duplicate-layer", layerId: layer.id });
+      }
+    };
+
+    deleteBtn.onclick = function () {
+      const layer = selectedLayer();
+      if (layer) {
+        selectedLayerId = "";
+        post({ type: "remove-layer", layerId: layer.id });
+      }
+    };
+
+    copyStyleBtn.onclick = function () {
+      post({ type: "copy-style" });
+    };
+
+    pasteStyleBtn.onclick = function () {
+      selectedLayerId = "";
+      fxMenuOpen = false;
+      post({ type: "paste-style" });
+    };
+
+    basicBtn.onclick = function () {
+      selectedLayerId = "";
+      fxMenuOpen = false;
+      post({ type: "reduce-basic" });
+    };
+
+    printExportBtn.onclick = function () {
+      openPrintModal();
+    };
+
+    clearBtn.onclick = function () {
+      selectedLayerId = "";
+      fxMenuOpen = false;
+      post({ type: "clear-appearance" });
+    };
+
+    fxBtn.onclick = function (event) {
+      event.stopPropagation();
+      if (!selectedLayer()) return;
+      fxMenuOpen = !fxMenuOpen;
+      renderFxMenu();
+    };
+
+    document.querySelectorAll("[data-add]").forEach(function (button) {
+      button.onclick = function () {
+        selectedLayerId = "";
+        fxMenuOpen = false;
+        post({ type: "add-layer", layerKind: button.dataset.add });
+      };
+    });
+
+    document.querySelectorAll("[data-fx-kind]").forEach(function (button) {
+      button.onclick = function () {
+        const layer = selectedLayer();
+        if (!layer) return;
+        fxMenuOpen = false;
+        renderFxMenu();
+        expanded[layer.id] = true;
+        post({ type: "add-effect", layerId: layer.id, effectKind: button.dataset.fxKind });
+      };
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!fxMenuOpen) return;
+      if (event.target === fxBtn || fxMenu.contains(event.target)) return;
+      fxMenuOpen = false;
+      renderFxMenu();
+    });
+
+    modalClose.onclick = function () {
+      closeModal();
+    };
+
+    editorModal.onclick = function (event) {
+      if (event.target === editorModal) closeModal();
+    };
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && modalState.kind) closeModal();
+    });
+
+    onmessage = function (event) {
+      const message = event.data.pluginMessage;
+      if (!message) return;
+      if (message.type === "print-export-result") {
+        downloadPrintPackage(message);
+        return;
+      }
+      if (message.type !== "selection-state") return;
+      Object.assign(state, message);
+      ensureExpandedDefaults();
+      ensureSelectedLayer();
+      if (isFieldEditing()) {
+        dirtyWhileEditing = true;
+        return;
+      }
+      render();
+    };
+
+function render() {
+      dirtyWhileEditing = false;
+      ensureSelectedLayer();
+      wrapBtn.disabled = !state.hasSelection || state.selectedCount !== 1 || state.isAppearance;
+      detachBtn.disabled = !state.isAppearance;
+      fxBtn.disabled = !state.isAppearance || !selectedLayer();
+      duplicateBtn.disabled = !state.isAppearance || !selectedLayer();
+      deleteBtn.disabled = !state.isAppearance || !selectedLayer();
+      copyStyleBtn.disabled = !state.isAppearance || state.stack.length === 0;
+      pasteStyleBtn.disabled = !state.isAppearance;
+      basicBtn.disabled = !state.isAppearance || state.stack.length === 0;
+      printExportBtn.disabled = !state.isAppearance;
+      clearBtn.disabled = !state.isAppearance || state.stack.length === 0;
+      document.querySelectorAll("[data-add]").forEach(function (button) {
+        button.disabled = !state.isAppearance;
+      });
+
+      if (state.isAppearance) {
+        statusEl.textContent = state.groupName + " - " + state.stack.length + " stack item" + (state.stack.length === 1 ? "" : "s");
+      } else if (state.selectedCount > 1) {
+        statusEl.textContent = "Select exactly one object.";
+      } else if (state.hasSelection) {
+        statusEl.textContent = "Ready to create a stack.";
+      } else {
+        statusEl.textContent = "No Selection";
+      }
+
+      if (!state.isAppearance) {
+        contentEl.innerHTML = '<div class="empty">Create a stack to manage fills, strokes, opacity, and real Figma effects.</div>';
+        fxMenuOpen = false;
+        closeModal();
+        renderFxMenu();
+        return;
+      }
+
+      if (state.stack.length === 0) {
+        contentEl.innerHTML = objectTemplate() + '<div class="empty">No appearance rows yet. Add a fill or stroke from the bottom bar.</div>';
+        bindEvents();
+        fxMenuOpen = false;
+        renderFxMenu();
+        renderModal();
+        return;
+      }
+
+      contentEl.innerHTML = objectTemplate() + state.stack.map(layerTemplate).reverse().join("");
+      bindEvents();
+      renderFxMenu();
+      renderModal();
+    }
+
+    function objectTemplate() {
+      const globalAppearance = state.globalAppearance || { opacity: 100, blendMode: "NORMAL" };
+      const blend = globalAppearance.blendMode || "NORMAL";
+      const blendText = blend === "NORMAL" ? "" : " " + displayBlendMode(blend);
+      const objectType = state.baseType === "TEXT" ? "Type" : "Object";
+      const textHint = state.isTextBase && state.textContent ? " - " + escapeHtml(state.textContent) : "";
+      return [
+        '<article data-object="true">',
+        '<div class="row object" data-object-row title="Double click to edit object appearance">',
+        '<div class="eye"></div>',
+        '<div class="caret"></div>',
+        '<div class="label"><span class="label-name">' + objectType + '</span><span class="summary">Opacity: ' + globalAppearance.opacity + '%' + blendText + textHint + '</span></div>',
+        '<button class="footer-btn" data-object-edit title="Edit object">' + editIcon + '</button>',
+        '</div>',
+        '</article>'
+      ].join("");
+    }
+
+    function layerTemplate(layer) {
+      const opened = expanded[layer.id] !== false;
+      const selected = layer.id === selectedLayerId;
+      const label = layer.type === "stroke" ? "Stroke:" : "Fill:";
+      const detailParts = [];
+      if (layer.type === "stroke") detailParts.push(layer.weight + " px");
+      detailParts.push("Opacity: " + layer.opacity + "%");
+      if (layer.blendMode && layer.blendMode !== "NORMAL") detailParts.push(displayBlendMode(layer.blendMode));
+      const detail = detailParts.join(" - ");
+      const effects = layer.effects || [];
+      const opacityRow = opened ? opacityTemplate(layer) : "";
+      const effectRows = opened ? effects.map(function (effect) {
+        return effectTemplate(layer, effect);
+      }).join("") : "";
+
+      return [
+        '<article data-layer="' + layer.id + '" class="' + (layer.visible ? "" : "disabled") + '">',
+        '<div class="row' + (selected ? " selected" : "") + '" data-row-layer="' + layer.id + '" draggable="true" title="Double click to edit">',
+        '<div class="eye" data-action="visible" title="Toggle visibility">' + (layer.visible ? "o" : "-") + '</div>',
+        '<div class="caret" data-action="expand" title="Expand">' + (opened ? "v" : ">") + '</div>',
+        '<div class="label"><span class="label-name">' + label + '</span><span class="swatch" style="' + swatchStyle(layer) + '"></span><span class="summary">' + detail + '</span></div>',
+        '<button class="footer-btn" data-edit-layer="' + layer.id + '" title="Edit stack">' + (effects.length ? '<span class="fx-label">fx</span>' : editIcon) + '</button>',
+        '</div>',
+        opacityRow,
+        effectRows,
+        '</article>'
+      ].join("");
+    }
+
+    function opacityTemplate(layer) {
+      const blend = layer.blendMode || "NORMAL";
+      const blendText = blend === "NORMAL" ? "Default" : displayBlendMode(blend);
+      return [
+        '<div class="row opacity-row" data-opacity-row="' + layer.id + '" title="Double click to edit opacity and blend">',
+        '<div class="eye"></div>',
+        '<div></div>',
+        '<div class="label"><span class="label-name">Opacity:</span><span class="summary">' + layer.opacity + '% ' + blendText + '</span></div>',
+        '<button class="footer-btn" data-edit-layer="' + layer.id + '" title="Edit opacity">' + editIcon + '</button>',
+        '</div>'
+      ].join("");
+    }
+
+    function paintFields(layer) {
+      const paintRow = [
+        '<div class="fields paint-row">',
+        '<div class="field"><label>Paint</label><select data-field="paintType">' + paintTypeOptions(layer.paintType) + '</select></div>',
+        '<div class="field"><label>Opacity</label><input type="number" min="0" max="100" data-field="opacity" value="' + layer.opacity + '"></div>',
+        '<div class="field"><label>Blend</label><select data-field="blendMode">' + blendModeOptions(layer.blendMode) + '</select></div>',
+        '</div>'
+      ].join("");
+
+      if (layer.paintType === "GRADIENT_LINEAR" || layer.paintType === "GRADIENT_RADIAL") {
+        const gradientColors = [
+          paintRow,
+          '<div class="fields three">',
+          '<div class="field"><label>Gradient start</label><input type="color" data-field="gradientStart" value="' + layer.gradientStart + '"></div>',
+          '<div class="field"><label>End</label><input type="color" data-field="gradientEnd" value="' + layer.gradientEnd + '"></div>',
+          layer.paintType === "GRADIENT_LINEAR" ? '<div class="field"><label>Angle</label><input type="number" min="-360" max="360" data-field="gradientAngle" value="' + layer.gradientAngle + '"></div>' : '<div class="field"></div>',
+          '</div>'
+        ];
+        return gradientColors.join("");
+      }
+
+      return [
+        paintRow,
+        '<div class="fields three"><div class="field"><label>Color</label><input type="color" data-field="color" value="' + layer.color + '"></div><div></div><div></div></div>'
+      ].join("");
+    }
+
+    function strokeStyleFields(layer) {
+      return [
+        '<div class="fields four">',
+        '<div class="field"><label>Weight</label><input type="number" min="0" max="200" data-field="weight" value="' + layer.weight + '"></div>',
+        '<div class="field"><label>Cap</label><select data-field="strokeCap">' + enumOptions(layer.strokeCap, [
+          ["", "Keep"],
+          ["NONE", "Butt"],
+          ["ROUND", "Round"],
+          ["SQUARE", "Square"]
+        ]) + '</select></div>',
+        '<div class="field"><label>Corner</label><select data-field="strokeJoin">' + enumOptions(layer.strokeJoin, [
+          ["", "Keep"],
+          ["MITER", "Miter"],
+          ["ROUND", "Round"],
+          ["BEVEL", "Bevel"]
+        ]) + '</select></div>',
+        '<div class="field"><label>Align</label><select data-field="strokeAlign">' + enumOptions(layer.strokeAlign, [
+          ["", "Keep"],
+          ["CENTER", "Center"],
+          ["INSIDE", "Inside"],
+          ["OUTSIDE", "Outside"]
+        ]) + '</select></div>',
+        '</div>',
+        '<div class="fields three">',
+        '<div class="field"><label>Miter limit</label><input type="number" min="1" max="100" data-empty="keep" data-field="miterLimit" value="' + (layer.miterLimit === "" ? "" : layer.miterLimit) + '"></div>',
+        '<div class="field"><label>Dash</label><input data-field="dashPattern" value="' + dashPatternText(layer.dashPattern) + '" placeholder="4 4"></div>',
+        '<div></div>',
+        '</div>'
+      ].join("");
+    }
+
+    function effectTemplate(layer, effect) {
+      return [
+        '<div class="row child" data-layer="' + layer.id + '" data-effect="' + effect.id + '" title="Double click to edit effect">',
+        '<div class="eye" data-effect-action="visible" title="Toggle effect">' + (effect.visible ? "o" : "-") + '</div>',
+        '<div></div>',
+        '<div class="label"><span class="label-name">' + escapeHtml(effect.name) + '</span><span class="fx-mark">fx</span><span class="summary">' + effectSummary(effect) + '</span></div>',
+        '<button class="footer-btn danger" data-effect-action="remove" title="Remove effect">' + trashIcon + '</button>',
+        '</div>'
+      ].join("");
+    }
+
+    function effectFields(effect) {
+      if (effect.type === "transform") {
+        return [
+          '<div class="fields four">',
+          '<div class="field"><label>Scale X %</label><input type="number" min="1" max="1000" data-effect-field="scaleX" value="' + effect.scaleX + '"></div>',
+          '<div class="field"><label>Scale Y %</label><input type="number" min="1" max="1000" data-effect-field="scaleY" value="' + effect.scaleY + '"></div>',
+          '<div class="field"><label>Move X</label><input type="number" min="-5000" max="5000" data-effect-field="moveX" value="' + effect.moveX + '"></div>',
+          '<div class="field"><label>Move Y</label><input type="number" min="-5000" max="5000" data-effect-field="moveY" value="' + effect.moveY + '"></div>',
+          '</div>',
+          '<div class="fields four">',
+          '<div class="field"><label>Rotate</label><input type="number" min="-3600" max="3600" data-effect-field="rotate" value="' + effect.rotate + '"></div>',
+          '<div class="field"><label>Copies</label><input type="number" min="0" max="100" data-effect-field="copies" value="' + effect.copies + '"></div>',
+          '<div class="field"><label>Reflect</label><label class="check-row"><input type="checkbox" data-effect-field="reflectX"' + (effect.reflectX ? " checked" : "") + '> X</label></div>',
+          '<div class="field"><label>&nbsp;</label><label class="check-row"><input type="checkbox" data-effect-field="reflectY"' + (effect.reflectY ? " checked" : "") + '> Y</label></div>',
+          '</div>'
+        ].join("");
+      }
+
+      if (effect.type === "layerBlur" || effect.type === "backgroundBlur") {
+        return '<div class="fields three"><div class="field"><label>Blur</label><input type="number" min="0" max="500" data-effect-field="radius" value="' + effect.radius + '"></div><div></div><div></div></div>';
+      }
+
+      if (effect.type === "offsetPath") {
+        const textInsetNote = state.isTextBase ? '<div class="field-note">Negative offset on live text cannot shrink glyph outlines in Figma. Outline or flatten text first for a true inset.</div>' : '';
+        return [
+          '<div class="fields three">',
+          '<div class="field"><label>Offset</label><input type="number" min="-500" max="500" data-effect-field="amount" value="' + effect.amount + '"></div>',
+          '<div class="field"><label>Join</label><select data-effect-field="joinStyle">' + enumOptions(effect.joinStyle, [
+            ["MITER", "Miter"],
+            ["ROUND", "Round"],
+            ["BEVEL", "Bevel"]
+          ]) + '</select></div>',
+          '<div class="field"><label>Miter limit</label><input type="number" min="1" max="100" data-effect-field="miterLimit" value="' + effect.miterLimit + '"' + (effect.joinStyle === "MITER" ? "" : " disabled") + '></div>',
+          '</div>',
+          textInsetNote
+        ].join("");
+      }
+
+      if (effect.type === "roundCorners" || effect.type === "feather") {
+        const label = effect.type === "feather" ? "Radius" : "Corner";
+        return '<div class="fields three"><div class="field"><label>' + label + '</label><input type="number" min="0" max="500" data-effect-field="radius" value="' + effect.radius + '"></div><div></div><div></div></div>';
+      }
+
+      if (effect.type === "convertShape") {
+        return [
+          '<div class="fields four">',
+          '<div class="field"><label>Shape</label><select data-effect-field="shapeType">' + enumOptions(effect.shapeType, [
+            ["RECTANGLE", "Rectangle"],
+            ["ROUNDED_RECTANGLE", "Rounded"],
+            ["ELLIPSE", "Ellipse"]
+          ]) + '</select></div>',
+          '<div class="field"><label>Extra W</label><input type="number" min="-5000" max="5000" data-effect-field="widthExtra" value="' + effect.widthExtra + '"></div>',
+          '<div class="field"><label>Extra H</label><input type="number" min="-5000" max="5000" data-effect-field="heightExtra" value="' + effect.heightExtra + '"></div>',
+          '<div class="field"><label>Corner</label><input type="number" min="0" max="10000" data-effect-field="cornerRadius" value="' + effect.cornerRadius + '"' + (effect.shapeType === "ROUNDED_RECTANGLE" ? "" : " disabled") + '></div>',
+          '</div>'
+        ].join("");
+      }
+
+      if (effect.type === "noise") {
+        return [
+          '<div class="fields three">',
+          '<div class="field"><label>Type</label><select data-effect-field="noiseType">' + enumOptions(effect.noiseType, [
+            ["MONOTONE", "Monotone"],
+            ["DUOTONE", "Duotone"],
+            ["MULTITONE", "Multitone"]
+          ]) + '</select></div>',
+          '<div class="field"><label>Density %</label><input type="number" min="0" max="100" data-effect-field="density" value="' + effect.density + '"></div>',
+          '<div class="field"><label>Size</label><input type="number" min="0.1" max="100" step="0.1" data-effect-field="noiseSize" value="' + effect.noiseSize + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>Color</label><input type="color" data-effect-field="color" value="' + effect.color + '"></div>',
+          '<div class="field"><label>Secondary</label><input type="color" data-effect-field="secondaryColor" value="' + effect.secondaryColor + '"></div>',
+          '<div class="field"><label>Opacity</label><input type="number" min="0" max="100" data-effect-field="opacity" value="' + effect.opacity + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>Blend</label><select data-effect-field="blendMode">' + blendModeOptions(effect.blendMode) + '</select></div>',
+          '<div></div><div></div>',
+          '</div>'
+        ].join("");
+      }
+
+      if (effect.type === "colorHalftone") {
+        return [
+          '<div class="fields four">',
+          '<div class="field"><label>Dot</label><input type="number" min="0.5" max="200" step="0.5" data-effect-field="dotSize" value="' + effect.dotSize + '"></div>',
+          '<div class="field"><label>Spacing</label><input type="number" min="1" max="500" data-effect-field="spacing" value="' + effect.spacing + '"></div>',
+          '<div class="field"><label>Angle</label><input type="number" min="-3600" max="3600" data-effect-field="angle" value="' + effect.angle + '"></div>',
+          '<div class="field"><label>Opacity</label><input type="number" min="0" max="100" data-effect-field="opacity" value="' + effect.opacity + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>Color</label><input type="color" data-effect-field="color" value="' + effect.color + '"></div>',
+          '<div class="field"><label>Blend</label><select data-effect-field="blendMode">' + blendModeOptions(effect.blendMode) + '</select></div>',
+          '<div></div>',
+          '</div>'
+        ].join("");
+      }
+
+      if (effect.type === "scribble") {
+        return [
+          '<div class="fields four">',
+          '<div class="field"><label>Stroke</label><input type="number" min="0.1" max="100" step="0.1" data-effect-field="strokeWidth" value="' + effect.strokeWidth + '"></div>',
+          '<div class="field"><label>Gap</label><input type="number" min="1" max="500" data-effect-field="gap" value="' + effect.gap + '"></div>',
+          '<div class="field"><label>Angle</label><input type="number" min="-3600" max="3600" data-effect-field="angle" value="' + effect.angle + '"></div>',
+          '<div class="field"><label>Jitter</label><input type="number" min="0" max="100" step="0.5" data-effect-field="jitter" value="' + effect.jitter + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>Color</label><input type="color" data-effect-field="color" value="' + effect.color + '"></div>',
+          '<div class="field"><label>Opacity</label><input type="number" min="0" max="100" data-effect-field="opacity" value="' + effect.opacity + '"></div>',
+          '<div class="field"><label>Blend</label><select data-effect-field="blendMode">' + blendModeOptions(effect.blendMode) + '</select></div>',
+          '</div>'
+        ].join("");
+      }
+
+      if (effect.type === "texture") {
+        return [
+          '<div class="fields three">',
+          '<div class="field"><label>Size</label><input type="number" min="0.1" max="100" step="0.1" data-effect-field="noiseSize" value="' + effect.noiseSize + '"></div>',
+          '<div class="field"><label>Radius</label><input type="number" min="0" max="500" data-effect-field="radius" value="' + effect.radius + '"></div>',
+          '<div class="field"><label>Clip</label><label class="check-row"><input type="checkbox" data-effect-field="clipToShape"' + (effect.clipToShape ? " checked" : "") + '> Shape</label></div>',
+          '</div>'
+        ].join("");
+      }
+
+      if (effect.type === "glass") {
+        return [
+          '<div class="fields three">',
+          '<div class="field"><label>Light %</label><input type="number" min="0" max="100" data-effect-field="lightIntensity" value="' + effect.lightIntensity + '"></div>',
+          '<div class="field"><label>Angle</label><input type="number" min="0" max="360" data-effect-field="lightAngle" value="' + effect.lightAngle + '"></div>',
+          '<div class="field"><label>Radius</label><input type="number" min="0" max="500" data-effect-field="radius" value="' + effect.radius + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>Refraction %</label><input type="number" min="0" max="100" data-effect-field="refraction" value="' + effect.refraction + '"></div>',
+          '<div class="field"><label>Depth</label><input type="number" min="1" max="1000" data-effect-field="depth" value="' + effect.depth + '"></div>',
+          '<div class="field"><label>Dispersion %</label><input type="number" min="0" max="100" data-effect-field="dispersion" value="' + effect.dispersion + '"></div>',
+          '</div>'
+        ].join("");
+      }
+
+      if (effect.type === "outerGlow" || effect.type === "innerGlow") {
+        return [
+          '<div class="fields four">',
+          '<div class="field"><label>Color</label><input type="color" data-effect-field="color" value="' + effect.color + '"></div>',
+          '<div class="field"><label>Opacity</label><input type="number" min="0" max="100" data-effect-field="opacity" value="' + effect.opacity + '"></div>',
+          '<div class="field"><label>Blur</label><input type="number" min="0" max="500" data-effect-field="radius" value="' + effect.radius + '"></div>',
+          '<div class="field"><label>Spread</label><input type="number" min="-500" max="500" data-effect-field="spread" value="' + effect.spread + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>Blend</label><select data-effect-field="blendMode">' + blendModeOptions(effect.blendMode) + '</select></div>',
+          effect.type === "outerGlow" ? '<div class="field"><label>Behind</label><label class="check-row"><input type="checkbox" data-effect-field="showShadowBehindNode"' + (effect.showShadowBehindNode ? " checked" : "") + '> Transparent</label></div>' : '<div></div>',
+          '<div></div>',
+          '</div>'
+        ].join("");
+      }
+
+      return [
+        '<div class="fields four">',
+        '<div class="field"><label>Color</label><input type="color" data-effect-field="color" value="' + effect.color + '"></div>',
+        '<div class="field"><label>Opacity</label><input type="number" min="0" max="100" data-effect-field="opacity" value="' + effect.opacity + '"></div>',
+        '<div class="field"><label>Blur</label><input type="number" min="0" max="500" data-effect-field="radius" value="' + effect.radius + '"></div>',
+        '<div class="field"><label>Spread</label><input type="number" min="-500" max="500" data-effect-field="spread" value="' + effect.spread + '"></div>',
+        '</div>',
+        '<div class="fields four">',
+        '<div class="field"><label>Offset X</label><input type="number" min="-500" max="500" data-effect-field="offsetX" value="' + effect.offsetX + '"></div>',
+        '<div class="field"><label>Offset Y</label><input type="number" min="-500" max="500" data-effect-field="offsetY" value="' + effect.offsetY + '"></div>',
+        '<div class="field"><label>Blend</label><select data-effect-field="blendMode">' + blendModeOptions(effect.blendMode) + '</select></div>',
+        effect.type === "dropShadow" ? '<div class="field"><label>Behind</label><label class="check-row"><input type="checkbox" data-effect-field="showShadowBehindNode"' + (effect.showShadowBehindNode ? " checked" : "") + '> Transparent</label></div>' : '<div></div>',
+        '</div>'
+      ].join("");
+    }
+
+    function effectSummary(effect) {
+      if (effect.type === "transform") {
+        const parts = [];
+        if (Number(effect.moveX) || Number(effect.moveY)) parts.push("Move " + effect.moveX + ", " + effect.moveY);
+        if (Number(effect.scaleX) !== 100 || Number(effect.scaleY) !== 100) parts.push("Scale " + effect.scaleX + "/" + effect.scaleY + "%");
+        if (Number(effect.rotate)) parts.push(effect.rotate + "deg");
+        if (Number(effect.copies)) parts.push(effect.copies + " copies");
+        return parts.join(" - ");
+      }
+
+      if (effect.type === "layerBlur" || effect.type === "backgroundBlur") {
+        return "Blur " + effect.radius;
+      }
+
+      if (effect.type === "offsetPath") {
+        return effect.amount + " px - " + displayOffsetJoin(effect.joinStyle);
+      }
+
+      if (effect.type === "roundCorners") {
+        return "Corner " + effect.radius;
+      }
+
+      if (effect.type === "feather") {
+        return "Radius " + effect.radius;
+      }
+
+      if (effect.type === "convertShape") {
+        return displayShapeType(effect.shapeType) + " - " + effect.widthExtra + "/" + effect.heightExtra;
+      }
+
+      if (effect.type === "outerGlow" || effect.type === "innerGlow") {
+        return effect.opacity + "% - Blur " + effect.radius + " - " + displayBlendMode(effect.blendMode);
+      }
+
+      if (effect.type === "noise") {
+        return displayNoiseType(effect.noiseType) + " - " + effect.density + "% - " + displayBlendMode(effect.blendMode);
+      }
+
+      if (effect.type === "colorHalftone") {
+        return "Dot " + effect.dotSize + " / " + effect.spacing + " - " + displayBlendMode(effect.blendMode);
+      }
+
+      if (effect.type === "scribble") {
+        return "Stroke " + effect.strokeWidth + " / Gap " + effect.gap + " - " + displayBlendMode(effect.blendMode);
+      }
+
+      if (effect.type === "texture") {
+        return "Size " + effect.noiseSize + " - Radius " + effect.radius;
+      }
+
+      if (effect.type === "glass") {
+        return "Refraction " + effect.refraction + "% - Depth " + effect.depth;
+      }
+
+      return "Opacity " + effect.opacity + "% - Blur " + effect.radius + " - " + displayBlendMode(effect.blendMode);
+    }
+
+function bindEvents() {
+      contentEl.querySelectorAll("[data-object-row]").forEach(function (row) {
+        row.ondblclick = function () {
+          openObjectModal();
+        };
+      });
+
+      contentEl.querySelectorAll("[data-object-edit]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          openObjectModal();
+        };
+      });
+
+      contentEl.querySelectorAll("[data-row-layer]").forEach(function (row) {
+        row.onclick = function () {
+          selectedLayerId = row.dataset.rowLayer;
+          fxMenuOpen = false;
+          render();
+        };
+
+        row.ondblclick = function () {
+          selectedLayerId = row.dataset.rowLayer;
+          openLayerModal(row.dataset.rowLayer);
+        };
+
+        row.ondragstart = function (event) {
+          draggedLayerId = row.dataset.rowLayer;
+          selectedLayerId = draggedLayerId;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedLayerId);
+        };
+
+        row.ondragover = function (event) {
+          if (!draggedLayerId || draggedLayerId === row.dataset.rowLayer) return;
+          event.preventDefault();
+          row.classList.add("drop-before");
+        };
+
+        row.ondragleave = function () {
+          row.classList.remove("drop-before");
+        };
+
+        row.ondrop = function (event) {
+          event.preventDefault();
+          row.classList.remove("drop-before");
+          const targetLayerId = row.dataset.rowLayer;
+          if (!draggedLayerId || draggedLayerId === targetLayerId) return;
+          post({ type: "reorder-layer", layerId: draggedLayerId, afterLayerId: targetLayerId });
+          draggedLayerId = "";
+        };
+
+        row.ondragend = function () {
+          draggedLayerId = "";
+          contentEl.querySelectorAll(".drop-before").forEach(function (item) {
+            item.classList.remove("drop-before");
+          });
+        };
+      });
+
+      contentEl.querySelectorAll("[data-edit-layer]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          selectedLayerId = button.dataset.editLayer;
+          openLayerModal(button.dataset.editLayer);
+        };
+      });
+
+      contentEl.querySelectorAll("[data-opacity-row]").forEach(function (row) {
+        row.ondblclick = function () {
+          selectedLayerId = row.dataset.opacityRow;
+          openLayerModal(row.dataset.opacityRow);
+        };
+      });
+
+      contentEl.querySelectorAll("[data-action]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          const article = button.closest("[data-layer]");
+          const layerId = article ? article.dataset.layer : "";
+          const layer = findLayer(layerId);
+          if (!layer) return;
+          const action = button.dataset.action;
+          selectedLayerId = layerId;
+          if (action === "expand") {
+            expanded[layerId] = expanded[layerId] === false;
+            render();
+          }
+          if (action === "visible") {
+            post({ type: "update-layer", layer: Object.assign({}, layer, { visible: !layer.visible }) });
+          }
+        };
+      });
+
+      contentEl.querySelectorAll("[data-effect-action]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          const row = button.closest("[data-effect]");
+          const layerId = row ? row.dataset.layer : "";
+          const effectId = row ? row.dataset.effect : "";
+          const layer = findLayer(layerId);
+          const effect = layer ? findEffect(layer, effectId) : null;
+          if (!layer || !effect) return;
+          const action = button.dataset.effectAction;
+          selectedLayerId = layerId;
+          if (action === "remove") post({ type: "remove-effect", layerId: layerId, effectId: effectId });
+          if (action === "visible") post({ type: "update-effect", layerId: layerId, effect: Object.assign({}, effect, { visible: !effect.visible }) });
+        };
+      });
+
+      contentEl.querySelectorAll("[data-effect]").forEach(function (row) {
+        row.ondblclick = function () {
+          const layerId = row.dataset.layer;
+          const effectId = row.dataset.effect;
+          selectedLayerId = layerId;
+          openEffectModal(layerId, effectId);
+        };
+      });
+    }
+
+function openObjectModal() {
+      if (!state.isAppearance) return;
+      modalState.kind = "object";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      fxMenuOpen = false;
+      renderFxMenu();
+      renderModal();
+    }
+
+    function openLayerModal(layerId) {
+      if (!findLayer(layerId)) return;
+      modalState.kind = "layer";
+      modalState.layerId = layerId;
+      modalState.effectId = "";
+      selectedLayerId = layerId;
+      fxMenuOpen = false;
+      render();
+    }
+
+    function openEffectModal(layerId, effectId) {
+      const layer = findLayer(layerId);
+      const effect = layer ? findEffect(layer, effectId) : null;
+      if (!layer || !effect) return;
+      modalState.kind = "effect";
+      modalState.layerId = layerId;
+      modalState.effectId = effectId;
+      selectedLayerId = layerId;
+      fxMenuOpen = false;
+      render();
+    }
+
+    function openPrintModal() {
+      if (!state.isAppearance) return;
+      modalState.kind = "print";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      fxMenuOpen = false;
+      renderFxMenu();
+      renderModal();
+    }
+
+    function closeModal() {
+      modalState.kind = "";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      hideModal();
+    }
+
+    function hideModal() {
+      editorModal.hidden = true;
+      modalTitle.textContent = "Edit";
+      modalBody.innerHTML = "";
+    }
+
+    function renderModal() {
+      if (!modalState.kind) {
+        hideModal();
+        return;
+      }
+
+      if (!state.isAppearance) {
+        closeModal();
+        return;
+      }
+
+      if (modalState.kind === "object") {
+        modalTitle.textContent = "Object Appearance";
+        modalBody.innerHTML = objectModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
+        return;
+      }
+
+      if (modalState.kind === "print") {
+        modalTitle.textContent = "Print Export";
+        modalBody.innerHTML = printModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
+        return;
+      }
+
+      const layer = findLayer(modalState.layerId);
+      if (!layer) {
+        closeModal();
+        return;
+      }
+
+      if (modalState.kind === "layer") {
+        modalTitle.textContent = (layer.type === "stroke" ? "Stroke" : "Fill") + " Appearance";
+        modalBody.innerHTML = layerModalHtml(layer);
+        editorModal.hidden = false;
+        bindModalFields();
+        return;
+      }
+
+      const effect = findEffect(layer, modalState.effectId);
+      if (!effect) {
+        closeModal();
+        return;
+      }
+      modalTitle.textContent = effect.name;
+      modalBody.innerHTML = effectModalHtml(effect);
+      editorModal.hidden = false;
+      bindModalFields();
+    }
+
+    function objectModalHtml() {
+      const properties = state.objectProperties || {};
+      const globalAppearance = state.globalAppearance || { opacity: 100, blendMode: "NORMAL" };
+      const textProperties = state.textProperties || {};
+      const corner = properties.hasCornerRadius === true ? '<div class="field"><label>Corner</label><input type="number" min="0" data-object-field="cornerRadius" value="' + valueText(properties.cornerRadius) + '"></div>' : '<div></div>';
+      const textSection = state.isTextBase ? [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Character</div>',
+        '<div class="fields global-row">',
+        '<div class="field"><label>Font</label><select data-text-style-field="fontFamily">' + fontFamilyOptions(textProperties.fontFamily) + '</select></div>',
+        '<div class="field"><label>Style</label><select data-text-style-field="fontStyle">' + fontStyleOptions(textProperties.fontFamily, textProperties.fontStyle) + '</select></div>',
+        '</div>',
+        '<div class="fields four">',
+        '<div class="field"><label>Size</label><input type="number" min="1" max="1000" data-text-style-field="fontSize" value="' + valueText(textProperties.fontSize) + '"></div>',
+        '<div class="field"><label>Line</label><input type="number" min="0" max="10000" data-text-style-field="lineHeightValue" value="' + valueText(textProperties.lineHeightValue) + '"' + (textProperties.lineHeightMode === "AUTO" ? " disabled" : "") + '></div>',
+        '<div class="field"><label>Line unit</label><select data-text-style-field="lineHeightMode">' + enumOptions(textProperties.lineHeightMode, [
+          ["AUTO", "Auto"],
+          ["PIXELS", "px"],
+          ["PERCENT", "%"]
+        ]) + '</select></div>',
+        '<div class="field"><label>Tracking</label><input type="number" min="-1000" max="1000" data-text-style-field="letterSpacingValue" value="' + valueText(textProperties.letterSpacingValue) + '"></div>',
+        '</div>',
+        '<div class="fields four">',
+        '<div class="field"><label>Track unit</label><select data-text-style-field="letterSpacingMode">' + enumOptions(textProperties.letterSpacingMode, [
+          ["PIXELS", "px"],
+          ["PERCENT", "%"]
+        ]) + '</select></div>',
+        '<div class="field"><label>Paragraph</label><input type="number" min="0" max="10000" data-text-style-field="paragraphSpacing" value="' + valueText(textProperties.paragraphSpacing) + '"></div>',
+        '<div class="field"><label>Case</label><select data-text-style-field="textCase">' + enumOptions(textProperties.textCase, [
+          ["ORIGINAL", "Original"],
+          ["UPPER", "Upper"],
+          ["LOWER", "Lower"],
+          ["TITLE", "Title"]
+        ]) + '</select></div>',
+        '<div class="field"><label>Decoration</label><select data-text-style-field="textDecoration">' + enumOptions(textProperties.textDecoration, [
+          ["NONE", "None"],
+          ["UNDERLINE", "Underline"],
+          ["STRIKETHROUGH", "Strike"]
+        ]) + '</select></div>',
+        '</div>',
+        '</div>',
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Text</div>',
+        '<textarea data-text-field="characters" spellcheck="false">' + escapeHtml(state.textContent || "") + '</textarea>',
+        '</div>'
+      ].join("") : "";
+
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Object</div>',
+        '<div class="fields object-row">',
+        '<div class="field"><label>X</label><input type="number" data-object-field="x" value="' + valueText(properties.x) + '"></div>',
+        '<div class="field"><label>Y</label><input type="number" data-object-field="y" value="' + valueText(properties.y) + '"></div>',
+        '<div class="field"><label>W</label><input type="number" min="0.01" data-object-field="width" value="' + valueText(properties.width) + '"></div>',
+        '<div class="field"><label>H</label><input type="number" min="0.01" data-object-field="height" value="' + valueText(properties.height) + '"></div>',
+        '</div>',
+        '<div class="fields object-row">',
+        '<div class="field"><label>Rotate</label><input type="number" data-object-field="rotation" value="' + valueText(properties.rotation) + '"></div>',
+        corner,
+        '<div></div>',
+        '<div></div>',
+        '</div>',
+        '</div>',
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Global Appearance</div>',
+        '<div class="fields global-row">',
+        '<div class="field"><label>Blend mode</label><select data-global-field="blendMode">' + blendModeOptions(globalAppearance.blendMode) + '</select></div>',
+        '<div class="field"><label>Opacity</label><input type="number" min="0" max="100" data-global-field="opacity" value="' + valueText(globalAppearance.opacity) + '"></div>',
+        '</div>',
+        '</div>',
+        textSection
+      ].join("");
+    }
+
+    function layerModalHtml(layer) {
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">' + (layer.type === "stroke" ? "Stroke Paint" : "Fill Paint") + '</div>',
+        paintFields(layer),
+        '</div>',
+        layer.type === "stroke" ? '<div class="modal-section"><div class="modal-section-title">Stroke Style</div>' + strokeStyleFields(layer) + '</div>' : ""
+      ].join("");
+    }
+
+    function effectModalHtml(effect) {
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Effect Settings</div>',
+        effectFields(effect),
+        '</div>'
+      ].join("");
+    }
+
+    function printModalHtml() {
+      const warnings = printWarnings();
+      const warningHtml = warnings.length ? '<ul class="print-warnings">' + warnings.map(function (warning) {
+        return '<li class="print-warning">' + escapeHtml(warning) + '</li>';
+      }).join("") + '</ul>' : '<div class="print-ok">No obvious print warnings from the current stack.</div>';
+
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">CMYK Intent</div>',
+        '<div class="fields global-row">',
+        '<div class="field"><label>Profile</label><select data-print-field="profile">' + enumOptions(printSettings.profile, [
+          ["U.S. Web Coated (SWOP) v2", "U.S. Web Coated (SWOP) v2"],
+          ["GRACoL 2006 Coated1 v2", "GRACoL 2006 Coated1 v2"],
+          ["FOGRA39 / ISO Coated v2", "FOGRA39 / ISO Coated v2"],
+          ["Japan Color 2001 Coated", "Japan Color 2001 Coated"]
+        ]) + '</select></div>',
+        '<div class="field"><label>PDF target</label><select data-print-field="pdfTarget">' + enumOptions(printSettings.pdfTarget, [
+          ["PDF/X-4 intent", "PDF/X-4 intent"],
+          ["PDF/X-1a intent", "PDF/X-1a intent"]
+        ]) + '</select></div>',
+        '</div>',
+        '</div>',
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Page Setup</div>',
+        '<div class="fields four">',
+        '<div class="field"><label>Trim W mm</label><input type="number" min="1" data-print-field="trimWidthMm" value="' + printSettings.trimWidthMm + '"></div>',
+        '<div class="field"><label>Trim H mm</label><input type="number" min="1" data-print-field="trimHeightMm" value="' + printSettings.trimHeightMm + '"></div>',
+        '<div class="field"><label>Bleed mm</label><input type="number" min="0" data-print-field="bleedMm" value="' + printSettings.bleedMm + '"></div>',
+        '<div class="field"><label>Safe mm</label><input type="number" min="0" data-print-field="safeMm" value="' + printSettings.safeMm + '"></div>',
+        '</div>',
+        '<div class="fields three">',
+        '<div class="field"><label>Raster DPI</label><input type="number" min="72" max="1200" data-print-field="dpi" value="' + printSettings.dpi + '"></div>',
+        '<div class="field"><label>Black policy</label><select data-print-field="blackPolicy">' + enumOptions(printSettings.blackPolicy, [
+          ["100K text, rich black only for large solids", "100K text"],
+          ["Preserve RGB black until CMYK conversion", "Preserve RGB black"]
+        ]) + '</select></div>',
+        '<div></div>',
+        '</div>',
+        '</div>',
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Preflight</div>',
+        warningHtml,
+        '</div>',
+        '<div class="modal-section">',
+        '<button class="command-btn" id="export-print-package">Export source PDF + manifest</button>',
+        '</div>'
+      ].join("");
+    }
+
+    function bindModalFields() {
+      if (modalState.kind === "layer") {
+        const layerId = modalState.layerId;
+        modalBody.querySelectorAll("[data-field]").forEach(function (control) {
+          wireField(control, function () {
+            const layer = findLayer(layerId);
+            if (!layer) return null;
+            const updated = Object.assign({}, layer);
+            updated[control.dataset.field] = fieldValue(control);
+            updateLocalLayer(updated);
+            return { key: "layer:" + layerId, message: { type: "update-layer", layer: updated, silent: true } };
+          });
+        });
+      }
+
+      if (modalState.kind === "effect") {
+        const layerId = modalState.layerId;
+        const effectId = modalState.effectId;
+        modalBody.querySelectorAll("[data-effect-field]").forEach(function (input) {
+          wireField(input, function () {
+            const layer = findLayer(layerId);
+            const effect = layer ? findEffect(layer, effectId) : null;
+            if (!layer || !effect) return null;
+            const updated = Object.assign({}, effect);
+            updated[input.dataset.effectField] = fieldValue(input);
+            updateLocalEffect(layerId, updated);
+            return {
+              key: "effect:" + effectId,
+              message: { type: "update-effect", layerId: layerId, effect: updated, silent: true }
+            };
+          });
+        });
+      }
+
+      if (modalState.kind === "object") {
+        wireModalObjectFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-object-field]")));
+        wireModalGlobalFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-global-field]")));
+        const textInput = modalBody.querySelector("[data-text-field]");
+        if (textInput) wireModalTextField(textInput);
+        wireModalTextStyleFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-text-style-field]")));
+      }
+
+      if (modalState.kind === "print") {
+        wirePrintFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-print-field]")));
+        const exportButton = modalBody.querySelector("#export-print-package");
+        if (exportButton) {
+          exportButton.onclick = function () {
+            post({
+              type: "export-print-package",
+              printSettings: Object.assign({}, printSettings),
+              silent: true
+            });
+          };
+        }
+      }
+    }
+
+    function wireModalObjectFields(inputs) {
+      inputs.forEach(function (input) {
+        input.onfocus = function () {
+          dirtyWhileEditing = false;
+        };
+        input.oninput = function () {
+          const objectProperties = currentObjectPropertiesFromControls(inputs);
+          state.objectProperties = Object.assign({}, state.objectProperties || {}, objectProperties);
+          schedule("object-properties", {
+            type: "update-object-properties",
+            objectProperties: objectProperties,
+            silent: true
+          });
+        };
+        input.onchange = function () {
+          const objectProperties = currentObjectPropertiesFromControls(inputs);
+          state.objectProperties = Object.assign({}, state.objectProperties || {}, objectProperties);
+          flush("object-properties", {
+            type: "update-object-properties",
+            objectProperties: objectProperties,
+            silent: true
+          });
+        };
+        input.onblur = function () {
+          const objectProperties = currentObjectPropertiesFromControls(inputs);
+          state.objectProperties = Object.assign({}, state.objectProperties || {}, objectProperties);
+          flush("object-properties", {
+            type: "update-object-properties",
+            objectProperties: objectProperties,
+            silent: true
+          });
+          setTimeout(function () {
+            if (dirtyWhileEditing || !isFieldEditing()) render();
+          }, 0);
+        };
+      });
+    }
+
+    function wireModalGlobalFields(inputs) {
+      inputs.forEach(function (input) {
+        input.onfocus = function () {
+          dirtyWhileEditing = false;
+        };
+        input.oninput = function () {
+          const globalAppearance = currentGlobalAppearanceFromControls(inputs);
+          state.globalAppearance = globalAppearance;
+          schedule("global-appearance", {
+            type: "update-global",
+            globalAppearance: globalAppearance,
+            silent: true
+          });
+        };
+        input.onchange = function () {
+          const globalAppearance = currentGlobalAppearanceFromControls(inputs);
+          state.globalAppearance = globalAppearance;
+          flush("global-appearance", {
+            type: "update-global",
+            globalAppearance: globalAppearance,
+            silent: true
+          });
+        };
+        input.onblur = function () {
+          const globalAppearance = currentGlobalAppearanceFromControls(inputs);
+          state.globalAppearance = globalAppearance;
+          flush("global-appearance", {
+            type: "update-global",
+            globalAppearance: globalAppearance,
+            silent: true
+          });
+          setTimeout(function () {
+            if (dirtyWhileEditing || !isFieldEditing()) render();
+          }, 0);
+        };
+      });
+    }
+
+    function wireModalTextField(input) {
+      input.onfocus = function () {
+        dirtyWhileEditing = false;
+      };
+      input.oninput = function () {
+        state.textContent = input.value;
+        schedule("text-content", {
+          type: "update-text",
+          characters: input.value,
+          silent: true
+        });
+      };
+      input.onchange = function () {
+        state.textContent = input.value;
+        flush("text-content", {
+          type: "update-text",
+          characters: input.value,
+          silent: true
+        });
+      };
+      input.onblur = function () {
+        state.textContent = input.value;
+        flush("text-content", {
+          type: "update-text",
+          characters: input.value,
+          silent: true
+        });
+        setTimeout(function () {
+          if (dirtyWhileEditing || !isFieldEditing()) render();
+        }, 0);
+      };
+    }
+
+    function wireModalTextStyleFields(inputs) {
+      inputs.forEach(function (input) {
+        input.onfocus = function () {
+          dirtyWhileEditing = false;
+        };
+        input.oninput = function () {
+          const textProperties = currentTextPropertiesFromControls(inputs);
+          state.textProperties = Object.assign({}, state.textProperties || {}, textProperties);
+          schedule("text-style", {
+            type: "update-text-style",
+            textProperties: textProperties,
+            silent: true
+          });
+        };
+        input.onchange = function () {
+          const textProperties = currentTextPropertiesFromControls(inputs);
+          state.textProperties = Object.assign({}, state.textProperties || {}, textProperties);
+          flush("text-style", {
+            type: "update-text-style",
+            textProperties: textProperties,
+            silent: true
+          });
+          if (input.dataset.textStyleField === "fontFamily" || input.dataset.textStyleField === "lineHeightMode") {
+            setTimeout(renderModal, 0);
+          }
+        };
+        input.onblur = function () {
+          const textProperties = currentTextPropertiesFromControls(inputs);
+          state.textProperties = Object.assign({}, state.textProperties || {}, textProperties);
+          flush("text-style", {
+            type: "update-text-style",
+            textProperties: textProperties,
+            silent: true
+          });
+          setTimeout(function () {
+            if (dirtyWhileEditing || !isFieldEditing()) render();
+          }, 0);
+        };
+      });
+    }
+
+    function currentObjectPropertiesFromControls(inputs) {
+      const properties = {};
+      inputs.forEach(function (input) {
+        properties[input.dataset.objectField] = input.value === "" ? "" : Number(input.value);
+      });
+      return properties;
+    }
+
+    function currentGlobalAppearanceFromControls(inputs) {
+      const globalAppearance = Object.assign({ opacity: 100, blendMode: "NORMAL" }, state.globalAppearance || {});
+      inputs.forEach(function (input) {
+        if (input.dataset.globalField === "opacity") {
+          globalAppearance.opacity = input.value === "" ? 100 : Number(input.value);
+        }
+        if (input.dataset.globalField === "blendMode") {
+          globalAppearance.blendMode = input.value || "NORMAL";
+        }
+      });
+      return globalAppearance;
+    }
+
+    function wirePrintFields(inputs) {
+      inputs.forEach(function (input) {
+        input.oninput = function () {
+          updatePrintSettingsFromControls(inputs);
+        };
+        input.onchange = function () {
+          updatePrintSettingsFromControls(inputs);
+          renderModal();
+        };
+      });
+    }
+
+    function updatePrintSettingsFromControls(inputs) {
+      inputs.forEach(function (input) {
+        const key = input.dataset.printField;
+        if (input.type === "number") {
+          printSettings[key] = input.value === "" ? 0 : Number(input.value);
+        } else {
+          printSettings[key] = input.value;
+        }
+      });
+    }
+
+    function currentTextPropertiesFromControls(inputs) {
+      const properties = {};
+      inputs.forEach(function (input) {
+        const key = input.dataset.textStyleField;
+        if (input.type === "number") {
+          properties[key] = input.value === "" ? "" : Number(input.value);
+          return;
+        }
+        properties[key] = input.value;
+      });
+      if (properties.fontFamily && properties.fontStyle) {
+        properties.fontStyle = validFontStyle(properties.fontFamily, properties.fontStyle);
+      }
+      return properties;
+    }
+
+    function valueText(value) {
+      return value === undefined || value === null ? "" : escapeHtml(value);
+    }
+
+function wireField(input, buildUpdate) {
+      input.onfocus = function () {
+        dirtyWhileEditing = false;
+      };
+      input.oninput = function () {
+        const update = buildUpdate();
+        if (!update) return;
+        schedule(update.key, update.message);
+      };
+      input.onchange = function () {
+        const update = buildUpdate();
+        if (!update) return;
+        flush(update.key, update.message);
+        if (input.dataset.field === "paintType" || input.dataset.effectField === "shapeType") {
+          setTimeout(render, 0);
+        }
+      };
+      input.onblur = function () {
+        const update = buildUpdate();
+        if (update) flush(update.key, update.message);
+        setTimeout(function () {
+          if (dirtyWhileEditing || !isFieldEditing()) render();
+        }, 0);
+      };
+    }
+
+    function fieldValue(input) {
+      if (input.dataset.field === "dashPattern") {
+        return input.value;
+      }
+
+      if (input.type === "checkbox") {
+        return input.checked;
+      }
+
+      if (input.type === "number") {
+        if (input.value === "" && input.dataset.empty === "keep") return "";
+        return input.value === "" ? 0 : Number(input.value);
+      }
+      return input.value;
+    }
+
+    function schedule(key, message) {
+      pendingMessages[key] = message;
+      clearTimeout(pendingTimers[key]);
+      pendingTimers[key] = setTimeout(function () {
+        post(pendingMessages[key]);
+        delete pendingMessages[key];
+        delete pendingTimers[key];
+      }, 220);
+    }
+
+    function flush(key, message) {
+      clearTimeout(pendingTimers[key]);
+      delete pendingTimers[key];
+      delete pendingMessages[key];
+      post(message);
+    }
+
+    function isFieldEditing() {
+      const active = document.activeElement;
+      return Boolean(active && (active.hasAttribute("data-field") || active.hasAttribute("data-effect-field") || active.hasAttribute("data-text-field") || active.hasAttribute("data-text-style-field") || active.hasAttribute("data-global-field") || active.hasAttribute("data-object-field")));
+    }
+
+    function ensureExpandedDefaults() {
+      state.stack.forEach(function (layer) {
+        if (expanded[layer.id] === undefined) expanded[layer.id] = true;
+      });
+    }
+
+    function ensureSelectedLayer() {
+      if (!state.stack.length) {
+        selectedLayerId = "";
+        return;
+      }
+      if (!findLayer(selectedLayerId)) {
+        selectedLayerId = state.stack[state.stack.length - 1].id;
+      }
+    }
+
+    function selectedLayer() {
+      return findLayer(selectedLayerId);
+    }
+
+    function updateLocalLayer(updated) {
+      state.stack = state.stack.map(function (layer) {
+        return layer.id === updated.id ? updated : layer;
+      });
+    }
+
+    function updateLocalEffect(layerId, updatedEffect) {
+      state.stack = state.stack.map(function (layer) {
+        if (layer.id !== layerId) return layer;
+        const effects = (layer.effects || []).map(function (effect) {
+          return effect.id === updatedEffect.id ? updatedEffect : effect;
+        });
+        return Object.assign({}, layer, { effects: effects });
+      });
+    }
+
+    function findLayer(id) {
+      return state.stack.find(function (layer) {
+        return layer.id === id;
+      });
+    }
+
+    function findEffect(layer, id) {
+      return (layer.effects || []).find(function (effect) {
+        return effect.id === id;
+      });
+    }
+
+    function renderFxMenu() {
+      fxMenu.hidden = !fxMenuOpen || !selectedLayer();
+      if (fxMenu.hidden) {
+        fxBtn.classList.remove("active");
+      } else {
+        fxBtn.classList.add("active");
+      }
+    }
+
+    function blendModeOptions(value) {
+      return enumOptions(value || "NORMAL", [
+        ["NORMAL", "Normal"],
+        ["MULTIPLY", "Multiply"],
+        ["SCREEN", "Screen"],
+        ["OVERLAY", "Overlay"],
+        ["DARKEN", "Darken"],
+        ["LIGHTEN", "Lighten"],
+        ["COLOR_DODGE", "Color Dodge"],
+        ["COLOR_BURN", "Color Burn"],
+        ["HARD_LIGHT", "Hard Light"],
+        ["SOFT_LIGHT", "Soft Light"],
+        ["DIFFERENCE", "Difference"],
+        ["EXCLUSION", "Exclusion"],
+        ["HUE", "Hue"],
+        ["SATURATION", "Saturation"],
+        ["COLOR", "Color"],
+        ["LUMINOSITY", "Luminosity"]
+      ]);
+    }
+
+    function paintTypeOptions(value) {
+      return enumOptions(value || "SOLID", [
+        ["SOLID", "Solid"],
+        ["GRADIENT_LINEAR", "Linear gradient"],
+        ["GRADIENT_RADIAL", "Radial gradient"]
+      ]);
+    }
+
+    function enumOptions(value, options) {
+      return options.map(function (option) {
+        const selected = option[0] === value ? " selected" : "";
+        return '<option value="' + option[0] + '"' + selected + '>' + option[1] + '</option>';
+      }).join("");
+    }
+
+    function fontFamilyOptions(value) {
+      const families = [];
+      const seen = {};
+      (state.availableFonts || []).forEach(function (font) {
+        if (seen[font.family]) return;
+        seen[font.family] = true;
+        families.push(font.family);
+      });
+      if (value && !seen[value]) families.unshift(value);
+      return families.map(function (family) {
+        return optionHtml(family, family, value);
+      }).join("");
+    }
+
+    function fontStyleOptions(family, value) {
+      const styles = [];
+      const seen = {};
+      (state.availableFonts || []).forEach(function (font) {
+        if (font.family !== family || seen[font.style]) return;
+        seen[font.style] = true;
+        styles.push(font.style);
+      });
+      if (value && !seen[value]) styles.unshift(value);
+      if (!styles.length) styles.push("Regular");
+      return styles.map(function (style) {
+        return optionHtml(style, style, value);
+      }).join("");
+    }
+
+    function optionHtml(value, label, selectedValue) {
+      const selected = value === selectedValue ? " selected" : "";
+      return '<option value="' + escapeHtml(value) + '"' + selected + '>' + escapeHtml(label) + '</option>';
+    }
+
+    function validFontStyle(family, style) {
+      const fonts = state.availableFonts || [];
+      for (let index = 0; index < fonts.length; index++) {
+        if (fonts[index].family === family && fonts[index].style === style) return style;
+      }
+      for (let index = 0; index < fonts.length; index++) {
+        if (fonts[index].family === family) return fonts[index].style;
+      }
+      return style || "Regular";
+    }
+
+    function printWarnings() {
+      const warnings = [];
+      warnings.push("Figma exports RGB. This package still needs CMYK conversion outside Figma.");
+      if (printSettings.profile === "U.S. Web Coated (SWOP) v2") {
+        warnings.push("SWOP v2 is the default fallback. Ask the printer for a specific ICC profile when possible.");
+      }
+      if (printSettings.bleedMm < 3) warnings.push("Bleed is below the common 3 mm print minimum.");
+      if (printSettings.dpi < 300) warnings.push("Raster DPI is below 300.");
+
+      state.stack.forEach(function (layer) {
+        if (isBrightPrintRisk(layer)) warnings.push(layer.name + " has bright RGB color that may shift in CMYK.");
+        (layer.effects || []).forEach(function (effect) {
+          if (["noise", "texture", "glass", "layerBlur", "backgroundBlur", "colorHalftone", "scribble", "feather"].includes(effect.type)) {
+            warnings.push(layer.name + " uses " + effect.name + "; inspect raster output before print.");
+          }
+        });
+      });
+
+      return uniqueList(warnings);
+    }
+
+    function isBrightPrintRisk(layer) {
+      const colors = [];
+      if (layer.color) colors.push(layer.color);
+      if (layer.gradientStart) colors.push(layer.gradientStart);
+      if (layer.gradientEnd) colors.push(layer.gradientEnd);
+      return colors.some(function (hex) {
+        const rgb = parseHexColor(hex);
+        const max = Math.max(rgb[0], rgb[1], rgb[2]);
+        const min = Math.min(rgb[0], rgb[1], rgb[2]);
+        return max > 224 && max - min > 140;
+      });
+    }
+
+    function parseHexColor(hex) {
+      const value = String(hex || "#000000").replace("#", "");
+      return [
+        parseInt(value.slice(0, 2), 16) || 0,
+        parseInt(value.slice(2, 4), 16) || 0,
+        parseInt(value.slice(4, 6), 16) || 0
+      ];
+    }
+
+    function uniqueList(values) {
+      const seen = {};
+      const result = [];
+      values.forEach(function (value) {
+        if (seen[value]) return;
+        seen[value] = true;
+        result.push(value);
+      });
+      return result;
+    }
+
+    function downloadPrintPackage(message) {
+      const base = message.fileName || "appearance-stack";
+      downloadFile(base + "-source-rgb.pdf", message.pdfBytes, "application/pdf");
+      downloadFile(base + "-print-manifest.json", message.manifestText, "application/json");
+    }
+
+    function downloadFile(fileName, contents, type) {
+      const blob = contents instanceof Uint8Array || Array.isArray(contents)
+        ? new Blob([new Uint8Array(contents)], { type: type })
+        : new Blob([contents], { type: type });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 1000);
+    }
+
+    function dashPatternText(value) {
+      if (Array.isArray(value)) return value.join(" ");
+      return value || "";
+    }
+
+    function displayBlendMode(value) {
+      return String(value || "NORMAL").toLowerCase().replace(/_/g, " ").replace(/\b\w/g, function (char) {
+        return char.toUpperCase();
+      });
+    }
+
+    function displayNoiseType(value) {
+      return String(value || "MONOTONE").toLowerCase().replace(/\b\w/g, function (char) {
+        return char.toUpperCase();
+      });
+    }
+
+    function displayShapeType(value) {
+      if (value === "ROUNDED_RECTANGLE") return "Rounded Rectangle";
+      return String(value || "RECTANGLE").toLowerCase().replace(/_/g, " ").replace(/\b\w/g, function (char) {
+        return char.toUpperCase();
+      });
+    }
+
+    function displayOffsetJoin(value) {
+      return String(value || "MITER").toLowerCase().replace(/\b\w/g, function (char) {
+        return char.toUpperCase();
+      });
+    }
+
+    function swatchStyle(layer) {
+      if (layer.paintType === "GRADIENT_LINEAR" || layer.paintType === "GRADIENT_RADIAL") {
+        const cssAngle = 90 + (Number(layer.gradientAngle) || 0);
+        const gradient = layer.paintType === "GRADIENT_RADIAL" ? "radial-gradient(circle, " : "linear-gradient(" + cssAngle + "deg, ";
+        return "background:" + gradient + layer.gradientStart + ", " + layer.gradientEnd + ");";
+      }
+      return "background:" + layer.color + ";";
+    }
+
+    function post(message) {
+      parent.postMessage({ pluginMessage: message }, "*");
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, function (char) {
+        return {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;"
+        }[char];
+      });
+    }
+
+render();
+  </script>
+</body>
+</html>
