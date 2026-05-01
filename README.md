@@ -13,8 +13,11 @@ A local Figma plugin that mimics Adobe Illustrator's Appearance panel by renderi
 - Supports native shadow/blur effect rows: Drop Shadow, Inner Shadow, Outer Glow, Inner Glow, Layer Blur, and Background Blur.
 - Renders Noise with a generated PNG tile overlay so it works even when Figma's beta native Noise effect is unavailable.
 - Adds Illustrator-style render-pipeline effects that do not rely on missing Figma APIs: Offset Path with Miter/Round/Bevel joins, Round Corners, Feather, Convert to Shape, Color Halftone, and Scribble.
+- Includes a separate Blend tab for Illustrator-style object blends: Make, live Blend Options, editable Start/End source paths, Update, Reverse Front to Back, Expand, and Release.
 - Exposes native beta effect rows for Texture and Glass when the running Figma editor supports them.
-- Supports solid, linear gradient, and radial gradient paints per stack item, including linear gradient angle.
+- Supports solid, linear gradient, and radial gradient paints per stack item, including editable multi-stop gradients and linear gradient angle.
+- Adds a Swatches tab for saving solid colors and gradients, then applying them to the selected fill or stroke stack.
+- Adds an Object tab with destructive vector path cleanup commands: Simplify Path and Smooth Path.
 - Supports global object opacity and blend mode after the full appearance stack is rendered.
 - Uses a fixed frame container for new stacks so adding fills, strokes, and effects does not change the stack object's X/Y/width/height.
 - Shows and edits common object properties: X, Y, width, height, rotation, and corner radius when Figma exposes it for the base object.
@@ -92,4 +95,6 @@ Figma does not export native CMYK/PDF-X final files. Print Export creates an RGB
 
 The first version is optimized for common shapes, frames, groups, and vector-like nodes. Text and complex component instances may need detaching or outlining before every appearance type behaves exactly as expected.
 
-Offset Path on live text can add an outward stroke-style offset, but Figma does not expose live glyph-outline inset editing. For a true negative text offset, outline or flatten the text first.
+Offset Path on live text can add an outward stroke-style offset, but Figma does not expose live glyph-outline inset editing. For a true negative text offset, outline or flatten the text first. Negative Offset Path uses Figma's corner radius behavior for simple shapes.
+
+Blend groups keep the two original objects as hidden source endpoints. Turn on endpoint editing in the Blend tab, select Start or End, edit the source path in Figma, then run Update Blend to rebuild the current blend stack from those sources.

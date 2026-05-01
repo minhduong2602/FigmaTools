@@ -97,6 +97,7 @@ function createLayer(type) {
       color: DEFAULT_STROKE,
       gradientStart: DEFAULT_STROKE,
       gradientEnd: DEFAULT_GRADIENT_END,
+      gradientStops: defaultGradientStops(DEFAULT_STROKE, DEFAULT_GRADIENT_END),
       gradientAngle: 0,
       opacity: 100,
       weight: 4,
@@ -118,6 +119,7 @@ function createLayer(type) {
     color: DEFAULT_FILL,
     gradientStart: DEFAULT_FILL,
     gradientEnd: DEFAULT_GRADIENT_END,
+    gradientStops: defaultGradientStops(DEFAULT_FILL, DEFAULT_GRADIENT_END),
     gradientAngle: 0,
     opacity: 100,
     blendMode: "NORMAL",
@@ -162,6 +164,7 @@ function normalizeLayer(layer) {
     color: normalizeHex(layer.color || layer.gradientStart || fallbackColor, fallbackColor),
     gradientStart: normalizeHex(layer.gradientStart || layer.color || fallbackColor, fallbackColor),
     gradientEnd: normalizeHex(layer.gradientEnd || DEFAULT_GRADIENT_END, DEFAULT_GRADIENT_END),
+    gradientStops: normalizeGradientStops(layer.gradientStops, layer.gradientStart || layer.color || fallbackColor, layer.gradientEnd || DEFAULT_GRADIENT_END),
     gradientAngle: clampNumber(layer.gradientAngle, -360, 360, 0),
     opacity: clampNumber(layer.opacity, 0, 100, 100),
     blendMode: normalizeBlendMode(layer.blendMode),
@@ -178,6 +181,33 @@ function normalizeLayer(layer) {
     effects,
     visible: layer.visible !== false
   };
+}
+
+function defaultGradientStops(start, end) {
+  return [
+    { id: createId(), position: 0, color: normalizeHex(start, DEFAULT_FILL) },
+    { id: createId(), position: 100, color: normalizeHex(end, DEFAULT_GRADIENT_END) }
+  ];
+}
+
+function normalizeGradientStops(stops, start, end) {
+  const fallback = defaultGradientStops(start, end);
+  const source = Array.isArray(stops) && stops.length ? stops : fallback;
+  const normalized = source.map(function (stop, index) {
+    const fallbackStop = fallback[Math.min(index, fallback.length - 1)] || fallback[0];
+    return {
+      id: stop && stop.id ? String(stop.id) : createId(),
+      position: clampNumber(stop && stop.position, 0, 100, fallbackStop.position),
+      color: normalizeHex(stop && stop.color, fallbackStop.color)
+    };
+  });
+  normalized.sort(function (a, b) {
+    return a.position - b.position;
+  });
+  if (normalized.length === 1) {
+    normalized.push({ id: createId(), position: 100, color: normalized[0].color });
+  }
+  return normalized;
 }
 
 function legacyEffects(layer) {

@@ -61,6 +61,20 @@ function createEffect(type) {
     });
   }
 
+  if (type === "warp") {
+    return normalizeEffect({
+      id: createId(),
+      type,
+      name: "Warp",
+      warpStyle: "ARC",
+      warpAxis: "HORIZONTAL",
+      bend: 50,
+      hDistort: 0,
+      vDistort: 0,
+      visible: true
+    });
+  }
+
   if (type === "roundCorners") {
     return normalizeEffect({
       id: createId(),
@@ -238,7 +252,8 @@ function normalizeEffect(effect) {
     "feather",
     "convertShape",
     "colorHalftone",
-    "scribble"
+    "scribble",
+    "warp"
   ].includes(incomingType)) return null;
   const type = incomingType;
   return {
@@ -274,6 +289,11 @@ function normalizeEffect(effect) {
     amount: clampNumber(effect.amount, -500, 500, 8),
     joinStyle: normalizeOffsetJoin(effect.joinStyle),
     miterLimit: clampNumber(effect.miterLimit, 1, 100, 4),
+    warpStyle: normalizeWarpStyle(effect.warpStyle),
+    warpAxis: normalizeWarpAxis(effect.warpAxis),
+    bend: clampNumber(effect.bend, -100, 100, 50),
+    hDistort: clampNumber(effect.hDistort, -100, 100, 0),
+    vDistort: clampNumber(effect.vDistort, -100, 100, 0),
     shapeType: normalizeShapeEffectType(effect.shapeType),
     widthExtra: clampNumber(effect.widthExtra, -5000, 5000, 0),
     heightExtra: clampNumber(effect.heightExtra, -5000, 5000, 0),

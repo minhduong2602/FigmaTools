@@ -47,6 +47,18 @@ function normalizeOffsetJoin(value) {
   return OFFSET_JOINS.includes(value) ? value : "MITER";
 }
 
+function normalizeWarpStyle(value) {
+  return WARP_STYLES.includes(value) ? value : "ARC";
+}
+
+function normalizeWarpAxis(value) {
+  return WARP_AXES.includes(value) ? value : "HORIZONTAL";
+}
+
+function normalizeBlendSpacingMode(value) {
+  return BLEND_SPACING_MODES.includes(value) ? value : "SPECIFIED_STEPS";
+}
+
 function defaultEffectOpacity(type) {
   if (type === "innerShadow") return 24;
   if (type === "outerGlow") return 65;
@@ -122,6 +134,7 @@ function effectName(type) {
   if (type === "convertShape") return "Convert to Shape";
   if (type === "colorHalftone") return "Color Halftone";
   if (type === "scribble") return "Scribble";
+  if (type === "warp") return "Warp";
   return titleCase(type);
 }
 

@@ -3,6 +3,7 @@ figma.showUI(__html__, { width: 360, height: 620, themeColors: true });
 let availableFonts = [];
 
 loadAvailableFonts();
+loadSavedSwatches();
 
 figma.on("selectionchange", () => {
   sendSelectionState();
@@ -74,6 +75,88 @@ figma.ui.onmessage = async (message) => {
       if (!message.silent) sendSelectionState();
     }
 
+    if (message.type === "blend-make") {
+      await makeBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-release") {
+      await releaseBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-expand") {
+      await expandBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-reverse-front-to-back") {
+      await reverseBlendFrontToBack();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-toggle-edit-endpoints") {
+      await toggleBlendEndpointEditMode();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-select-start") {
+      await selectBlendEndpoint(BLEND_ROLE_START);
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-select-end") {
+      await selectBlendEndpoint(BLEND_ROLE_END);
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-update") {
+      await updateActiveBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-update-options") {
+      const group = getActiveBlendGroup();
+      if (!group) return notifySelectBlend();
+      await updateBlendOptions(group, message.blendOptions || {});
+      if (!message.silent) sendSelectionState();
+    }
+
+    if (message.type === "save-swatch") {
+      await saveSwatchFromLayer(message.layerId || "");
+      sendSelectionState();
+    }
+
+    if (message.type === "save-selection-swatch") {
+      await saveSwatchFromSelection();
+      sendSelectionState();
+    }
+
+    if (message.type === "create-swatch") {
+      await createSavedSwatch(message.swatch || {});
+      sendSelectionState();
+    }
+
+    if (message.type === "remove-swatch") {
+      await removeSavedSwatch(message.swatchId || "");
+      sendSelectionState();
+    }
+
+    if (message.type === "apply-swatch") {
+      await applySavedSwatch(message.layerId || "", message.swatchId || "");
+      sendSelectionState();
+    }
+
+    if (message.type === "simplify-path") {
+      await simplifySelectedPath(message.tolerance);
+      sendSelectionState();
+    }
+
+    if (message.type === "smooth-path") {
+      await smoothSelectedPath(message.amount);
+      sendSelectionState();
+    }
+
     if (message.type === "add-layer") {
       const group = getActiveAppearanceGroup();
       if (!group) return notifySelectAppearance();
@@ -95,7 +178,9 @@ figma.ui.onmessage = async (message) => {
           return;
         }
         stack[index].effects.push(createEffect(message.effectKind));
+        figma.currentPage.selection = [group];
         await renderAppearance(group, stack);
+        figma.currentPage.selection = [group];
       }
       sendSelectionState();
     }
@@ -245,6 +330,24 @@ figma.ui.onmessage = async (message) => {
       }
       sendSelectionState();
     }
+
+    if (message.type === "reorder-effect") {
+      const group = getActiveAppearanceGroup();
+      if (!group) return notifySelectAppearance();
+      const stack = readStack(group);
+      const layer = stack.find((l) => l.id === message.layerId);
+      if (layer && layer.effects) {
+        const effects = layer.effects;
+        const fromIdx = effects.findIndex((e) => e.id === message.effectId);
+        const toIdx = effects.findIndex((e) => e.id === message.beforeEffectId);
+        if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
+          const moved = effects.splice(fromIdx, 1)[0];
+          effects.splice(toIdx, 0, moved);
+          await renderAppearance(group, stack);
+        }
+      }
+      sendSelectionState();
+    }
   } catch (error) {
     figma.notify(error && error.message ? error.message : "Appearance Stack hit an error.");
   }
@@ -276,6 +379,7 @@ async function loadAvailableFonts() {
 function sendSelectionState() {
   const selection = figma.currentPage.selection;
   const group = getActiveAppearanceGroup();
+  const blendGroup = getActiveBlendGroup();
   const base = group ? findBase(group) : null;
   figma.ui.postMessage({
     type: "selection-state",
@@ -291,7 +395,11 @@ function sendSelectionState() {
     availableFonts,
     objectProperties: group && base ? readObjectProperties(group, base) : null,
     globalAppearance: group ? readGlobalAppearance(group) : createGlobalAppearance(),
-    stack: group ? readStack(group) : []
+    stack: group ? readStack(group) : [],
+    isBlend: Boolean(blendGroup),
+    blendName: blendGroup ? blendGroup.name : "",
+    blendOptions: blendGroup ? readBlendOptions(blendGroup) : createBlendOptions(),
+    swatches: savedSwatches
   });
 }
 

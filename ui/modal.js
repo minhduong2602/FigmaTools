@@ -40,6 +40,25 @@ function openObjectModal() {
       renderModal();
     }
 
+    function openBlendOptionsModal() {
+      if (!state.isBlend) return;
+      modalState.kind = "blend-options";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      fxMenuOpen = false;
+      renderFxMenu();
+      renderModal();
+    }
+
+    function openSwatchModal() {
+      modalState.kind = "swatch";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      fxMenuOpen = false;
+      renderFxMenu();
+      renderModal();
+    }
+
     function closeModal() {
       modalState.kind = "";
       modalState.layerId = "";
@@ -56,6 +75,26 @@ function openObjectModal() {
     function renderModal() {
       if (!modalState.kind) {
         hideModal();
+        return;
+      }
+
+      if (modalState.kind === "blend-options") {
+        if (!state.isBlend) {
+          closeModal();
+          return;
+        }
+        modalTitle.textContent = "Blend Options";
+        modalBody.innerHTML = blendOptionsModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
+        return;
+      }
+
+      if (modalState.kind === "swatch") {
+        modalTitle.textContent = "New Swatch";
+        modalBody.innerHTML = swatchModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
         return;
       }
 
@@ -247,6 +286,63 @@ function openObjectModal() {
       ].join("");
     }
 
+    function blendOptionsModalHtml() {
+      const options = state.blendOptions || {};
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Spacing</div>',
+        '<div class="fields three">',
+        '<div class="field"><label>Mode</label><select data-blend-field="spacingMode">' + blendSpacingOptions(options.spacingMode) + '</select></div>',
+        '<div class="field"><label>Steps</label><input type="number" min="1" max="200" data-blend-field="steps" value="' + valueText(options.steps) + '"' + (options.spacingMode === "SPECIFIED_STEPS" ? "" : " disabled") + '></div>',
+        '<div class="field"><label>Distance</label><input type="number" min="1" max="10000" data-blend-field="distance" value="' + valueText(options.distance) + '"' + (options.spacingMode === "SPECIFIED_DISTANCE" ? "" : " disabled") + '></div>',
+        '</div>',
+        '</div>',
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Order</div>',
+        '<label class="check-row"><input type="checkbox" data-blend-field="reverseFrontToBack"' + (options.reverseFrontToBack ? " checked" : "") + '> Reverse front to back</label>',
+        '<label class="check-row"><input type="checkbox" data-blend-field="editEndpoints"' + (options.editEndpoints ? " checked" : "") + '> Show/edit endpoints</label>',
+        '</div>'
+      ].join("");
+    }
+
+    function swatchModalHtml() {
+      const draftLayer = swatchDraftLayer();
+      const paintFieldsHtml = swatchDraft.type === "solid" ? [
+        '<div class="fields three">',
+        '<div class="field"><label>Color</label><input type="color" data-swatch-field="color" value="' + swatchDraft.color + '"></div>',
+        '<div></div>',
+        '<div></div>',
+        '</div>'
+      ].join("") : [
+        '<div class="fields three">',
+        '<div class="field"><label>Gradient</label><select data-swatch-field="paintType">' + enumOptions(swatchDraft.paintType, [
+          ["GRADIENT_LINEAR", "Linear"],
+          ["GRADIENT_RADIAL", "Radial"]
+        ]) + '</select></div>',
+        swatchDraft.paintType === "GRADIENT_LINEAR" ? '<div class="field"><label>Angle</label><input type="number" min="-360" max="360" data-swatch-field="gradientAngle" value="' + swatchDraft.gradientAngle + '"></div>' : '<div></div>',
+        '<div></div>',
+        '</div>',
+        gradientStopEditor(draftLayer)
+      ].join("");
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Paint</div>',
+        '<div class="fields three">',
+        '<div class="field"><label>Type</label><select data-swatch-field="type">' + enumOptions(swatchDraft.type, [
+          ["solid", "Solid"],
+          ["gradient", "Gradient"]
+        ]) + '</select></div>',
+        '<div></div>',
+        '<div></div>',
+        '</div>',
+        paintFieldsHtml,
+        '</div>',
+        '<div class="modal-section">',
+        '<button class="command-btn" id="create-swatch">Save swatch</button>',
+        '</div>'
+      ].join("");
+    }
+
     function bindModalFields() {
       if (modalState.kind === "layer") {
         const layerId = modalState.layerId;
@@ -260,6 +356,7 @@ function openObjectModal() {
             return { key: "layer:" + layerId, message: { type: "update-layer", layer: updated, silent: true } };
           });
         });
+        wireGradientStopFields(layerId);
       }
 
       if (modalState.kind === "effect") {
@@ -299,6 +396,22 @@ function openObjectModal() {
               printSettings: Object.assign({}, printSettings),
               silent: true
             });
+          };
+        }
+      }
+
+      if (modalState.kind === "blend-options") {
+        wireBlendFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-blend-field]")));
+      }
+
+      if (modalState.kind === "swatch") {
+        wireSwatchDraftFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-swatch-field]")));
+        wireSwatchGradientFields();
+        const createButton = modalBody.querySelector("#create-swatch");
+        if (createButton) {
+          createButton.onclick = function () {
+            post({ type: "create-swatch", swatch: swatchDraftPayload() });
+            closeModal();
           };
         }
       }
@@ -496,6 +609,65 @@ function openObjectModal() {
           printSettings[key] = input.value;
         }
       });
+    }
+
+    function wireBlendFields(inputs) {
+      inputs.forEach(function (input) {
+        input.onfocus = function () {
+          dirtyWhileEditing = false;
+        };
+        input.oninput = function () {
+          const blendOptions = currentBlendOptionsFromControls(inputs);
+          state.blendOptions = Object.assign({}, state.blendOptions || {}, blendOptions);
+          schedule("blend-options", {
+            type: "blend-update-options",
+            blendOptions: blendOptions,
+            silent: true
+          });
+        };
+        input.onchange = function () {
+          const blendOptions = currentBlendOptionsFromControls(inputs);
+          state.blendOptions = Object.assign({}, state.blendOptions || {}, blendOptions);
+          flush("blend-options", {
+            type: "blend-update-options",
+            blendOptions: blendOptions,
+            silent: true
+          });
+          if (input.dataset.blendField === "spacingMode") {
+            setTimeout(renderModal, 0);
+          }
+          if (input.dataset.blendField === "editEndpoints" || input.dataset.blendField === "reverseFrontToBack") {
+            setTimeout(render, 0);
+          }
+        };
+        input.onblur = function () {
+          const blendOptions = currentBlendOptionsFromControls(inputs);
+          state.blendOptions = Object.assign({}, state.blendOptions || {}, blendOptions);
+          flush("blend-options", {
+            type: "blend-update-options",
+            blendOptions: blendOptions,
+            silent: true
+          });
+          setTimeout(function () {
+            if (dirtyWhileEditing || !isFieldEditing()) render();
+          }, 0);
+        };
+      });
+    }
+
+    function currentBlendOptionsFromControls(inputs) {
+      const options = Object.assign({}, state.blendOptions || {});
+      inputs.forEach(function (input) {
+        const key = input.dataset.blendField;
+        if (input.type === "checkbox") {
+          options[key] = input.checked;
+        } else if (input.type === "number") {
+          options[key] = input.value === "" ? 0 : Number(input.value);
+        } else {
+          options[key] = input.value;
+        }
+      });
+      return options;
     }
 
     function currentTextPropertiesFromControls(inputs) {

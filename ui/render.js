@@ -1,6 +1,19 @@
 function render() {
       dirtyWhileEditing = false;
       ensureSelectedLayer();
+      updateTabChrome();
+      if (activeTab === "blend") {
+        renderBlendPanel();
+        return;
+      }
+      if (activeTab === "object") {
+        renderObjectPanel();
+        return;
+      }
+      if (activeTab === "swatches") {
+        renderSwatchesPanel();
+        return;
+      }
       wrapBtn.disabled = !state.hasSelection || state.selectedCount !== 1 || state.isAppearance;
       detachBtn.disabled = !state.isAppearance;
       fxBtn.disabled = !state.isAppearance || !selectedLayer();
@@ -46,6 +59,147 @@ function render() {
       bindEvents();
       renderFxMenu();
       renderModal();
+    }
+
+    function updateTabChrome() {
+      appearanceTabBtn.classList.toggle("active", activeTab === "appearance");
+      objectTabBtn.classList.toggle("active", activeTab === "object");
+      swatchesTabBtn.classList.toggle("active", activeTab === "swatches");
+      blendTabBtn.classList.toggle("active", activeTab === "blend");
+      appearanceTools.hidden = activeTab !== "appearance";
+      objectTools.hidden = activeTab !== "object";
+      appearanceFooter.hidden = activeTab !== "appearance";
+      blendTools.hidden = activeTab !== "blend";
+      swatchesTools.hidden = activeTab !== "swatches";
+      fxMenuOpen = activeTab === "appearance" ? fxMenuOpen : false;
+      renderFxMenu();
+    }
+
+    function renderObjectPanel() {
+      closeModalIfAppearanceOnly();
+      const hasOne = state.selectedCount === 1;
+      simplifyPathBtn.disabled = !hasOne;
+      smoothPathBtn.disabled = !hasOne;
+      statusEl.textContent = hasOne ? "Object path tools" : "Select one vector path.";
+      contentEl.innerHTML = objectToolsTemplate();
+      bindEvents();
+      renderModal();
+    }
+
+    function objectToolsTemplate() {
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Path Cleanup</div>',
+        '<div class="fields two">',
+        '<div class="field"><label>Simplify tolerance</label><input type="number" min="0.1" max="50" step="0.1" data-object-tool="simplifyTolerance" value="' + objectToolsState.simplifyTolerance + '"></div>',
+        '<div class="field"><label>Smooth amount</label><input type="number" min="1" max="8" step="1" data-object-tool="smoothAmount" value="' + objectToolsState.smoothAmount + '"></div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function renderSwatchesPanel() {
+      closeModalIfAppearanceOnly();
+      newSwatchBtn.disabled = state.selectedCount !== 1;
+      saveSwatchBtn.disabled = !state.isAppearance || !selectedLayer();
+      document.querySelectorAll("[data-add]").forEach(function (button) {
+        button.disabled = true;
+      });
+      const target = selectedLayer();
+      if (state.isAppearance && target) {
+        statusEl.textContent = "Swatches - apply to " + target.name;
+      } else {
+        statusEl.textContent = "Swatches";
+      }
+      contentEl.innerHTML = swatchesTemplate();
+      bindEvents();
+      renderModal();
+    }
+
+    function swatchesTemplate() {
+      const swatches = state.swatches || [];
+      if (!swatches.length) {
+        return '<div class="empty">No swatches saved.</div>';
+      }
+      return [
+        '<div class="swatch-grid">',
+        swatches.map(function (swatch) {
+          return [
+            '<div class="swatch-card" data-swatch="' + swatch.id + '" title="' + escapeHtml(swatch.name || swatch.type) + '">',
+            '<button class="swatch-chip" data-swatch-apply="' + swatch.id + '" style="' + swatchStyleFromSwatch(swatch) + '"></button>',
+            '<button class="footer-btn danger swatch-delete" data-swatch-remove="' + swatch.id + '" title="Remove swatch">' + trashIcon + '</button>',
+            '<div class="swatch-name">' + escapeHtml(swatchLabel(swatch)) + '</div>',
+            '</div>'
+          ].join("");
+        }).join(""),
+        '</div>'
+      ].join("");
+    }
+
+    function renderBlendPanel() {
+      closeModalIfAppearanceOnly();
+      blendMakeBtn.disabled = state.selectedCount !== 2 || state.isBlend;
+      blendEditEndpointsBtn.disabled = !state.isBlend;
+      blendSelectStartBtn.disabled = !state.isBlend;
+      blendSelectEndBtn.disabled = !state.isBlend;
+      blendUpdateBtn.disabled = !state.isBlend;
+      blendOptionsBtn.disabled = !state.isBlend;
+      blendReverseBtn.disabled = !state.isBlend;
+      blendExpandBtn.disabled = !state.isBlend;
+      blendReleaseBtn.disabled = !state.isBlend;
+      blendEditEndpointsBtn.classList.toggle("active", state.isBlend && state.blendOptions && state.blendOptions.editEndpoints === true);
+      document.querySelectorAll("[data-add]").forEach(function (button) {
+        button.disabled = true;
+      });
+
+      if (state.isBlend) {
+        const options = state.blendOptions || {};
+        statusEl.textContent = state.blendName + " - " + blendSummary(options);
+        contentEl.innerHTML = blendTemplate(options);
+        bindEvents();
+        renderModal();
+        return;
+      }
+
+      if (state.selectedCount === 2) {
+        statusEl.textContent = "Ready to make a blend.";
+        contentEl.innerHTML = '<div class="empty">Use Make Blend to generate live interpolated objects between the two selected objects.</div>';
+      } else {
+        statusEl.textContent = "Select two objects.";
+        contentEl.innerHTML = '<div class="empty">Select exactly two objects, then switch here and click Make Blend.</div>';
+      }
+      renderModal();
+    }
+
+    function closeModalIfAppearanceOnly() {
+      if (modalState.kind === "object" || modalState.kind === "layer" || modalState.kind === "effect" || modalState.kind === "print") {
+        closeModal();
+      }
+    }
+
+    function blendTemplate(options) {
+      return [
+        '<article data-blend="true">',
+        '<div class="row object" data-blend-options title="Double click to edit blend options">',
+        '<div class="eye"></div>',
+        '<div class="caret"></div>',
+        '<div class="label"><span class="label-name">Blend</span><span class="summary">' + blendSummary(options) + '</span></div>',
+        '<button class="footer-btn" data-blend-edit title="Blend options">' + editIcon + '</button>',
+        '</div>',
+        '</article>',
+        '<div class="modal-section blend-info">',
+        '<div class="modal-section-title">Endpoints</div>',
+        '<div class="summary">' + (options.editEndpoints ? "Editable sources visible" : "Sources hidden") + '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function blendSummary(options) {
+      const mode = options.spacingMode || "SPECIFIED_STEPS";
+      const endpointText = options.editEndpoints ? " - endpoints" : "";
+      if (mode === "SMOOTH_COLOR") return "Smooth Color" + endpointText;
+      if (mode === "SPECIFIED_DISTANCE") return "Distance " + options.distance + " px" + endpointText;
+      return options.steps + " steps" + endpointText;
     }
 
     function objectTemplate() {
@@ -120,10 +274,11 @@ function render() {
       if (layer.paintType === "GRADIENT_LINEAR" || layer.paintType === "GRADIENT_RADIAL") {
         const gradientColors = [
           paintRow,
+          gradientStopEditor(layer),
           '<div class="fields three">',
-          '<div class="field"><label>Gradient start</label><input type="color" data-field="gradientStart" value="' + layer.gradientStart + '"></div>',
-          '<div class="field"><label>End</label><input type="color" data-field="gradientEnd" value="' + layer.gradientEnd + '"></div>',
           layer.paintType === "GRADIENT_LINEAR" ? '<div class="field"><label>Angle</label><input type="number" min="-360" max="360" data-field="gradientAngle" value="' + layer.gradientAngle + '"></div>' : '<div class="field"></div>',
+          '<div></div>',
+          '<div></div>',
           '</div>'
         ];
         return gradientColors.join("");
@@ -132,6 +287,30 @@ function render() {
       return [
         paintRow,
         '<div class="fields three"><div class="field"><label>Color</label><input type="color" data-field="color" value="' + layer.color + '"></div><div></div><div></div></div>'
+      ].join("");
+    }
+
+    function gradientStopEditor(layer) {
+      const stops = normalizedUiGradientStops(layer);
+      return [
+        '<div class="gradient-editor">',
+        '<div class="gradient-ramp" data-gradient-ramp="' + layer.id + '" style="' + gradientRampStyle(layer, stops) + '">',
+        stops.map(function (stop) {
+          return '<button class="gradient-stop" data-gradient-stop="' + stop.id + '" title="' + stop.position + '%" style="left:' + stop.position + '%;background:' + stop.color + '"></button>';
+        }).join(""),
+        '</div>',
+        '<div class="gradient-stop-list">',
+        stops.map(function (stop) {
+          return [
+            '<div class="gradient-stop-row" data-gradient-stop-row="' + stop.id + '">',
+            '<input type="color" data-gradient-stop="' + stop.id + '" data-gradient-field="color" value="' + stop.color + '">',
+            '<input type="number" min="0" max="100" data-gradient-stop="' + stop.id + '" data-gradient-field="position" value="' + stop.position + '">',
+            '<button class="footer-btn danger" data-gradient-remove="' + stop.id + '" title="Remove stop">' + trashIcon + '</button>',
+            '</div>'
+          ].join("");
+        }).join(""),
+        '</div>',
+        '</div>'
       ].join("");
     }
 
@@ -168,7 +347,7 @@ function render() {
 
     function effectTemplate(layer, effect) {
       return [
-        '<div class="row child" data-layer="' + layer.id + '" data-effect="' + effect.id + '" title="Double click to edit effect">',
+        '<div class="row child" data-layer="' + layer.id + '" data-effect="' + effect.id + '" draggable="true" title="Double click to edit effect">',
         '<div class="eye" data-effect-action="visible" title="Toggle effect">' + (effect.visible ? "o" : "-") + '</div>',
         '<div></div>',
         '<div class="label"><span class="label-name">' + escapeHtml(effect.name) + '</span><span class="fx-mark">fx</span><span class="summary">' + effectSummary(effect) + '</span></div>',
@@ -315,7 +494,26 @@ function render() {
         ].join("");
       }
 
-      if (effect.type === "outerGlow" || effect.type === "innerGlow") {
+      
+      if (effect.type === "warp") {
+        return [
+          '<div class="fields three">',
+          '<div class="field"><label>Style</label><select data-effect-field="warpStyle">' + enumOptions(effect.warpStyle, [
+            ["ARC", "Arc"], ["ARC_LOWER", "Arc Lower"], ["ARC_UPPER", "Arc Upper"], ["FLAG", "Flag"], ["RISE", "Rise"]
+          ]) + '</select></div>',
+          '<div class="field"><label>Axis</label><select data-effect-field="warpAxis">' + enumOptions(effect.warpAxis, [
+            ["HORIZONTAL", "Horizontal"], ["VERTICAL", "Vertical"]
+          ]) + '</select></div>',
+          '<div class="field"><label>Bend %</label><input type="number" min="-100" max="100" data-effect-field="bend" value="' + effect.bend + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>H Distort %</label><input type="number" min="-100" max="100" data-effect-field="hDistort" value="' + effect.hDistort + '"></div>',
+          '<div class="field"><label>V Distort %</label><input type="number" min="-100" max="100" data-effect-field="vDistort" value="' + effect.vDistort + '"></div>',
+          '<div></div>',
+          '</div>'
+        ].join("");
+      }
+if (effect.type === "outerGlow" || effect.type === "innerGlow") {
         return [
           '<div class="fields four">',
           '<div class="field"><label>Color</label><input type="color" data-effect-field="color" value="' + effect.color + '"></div>',
@@ -399,6 +597,12 @@ function render() {
 
       if (effect.type === "glass") {
         return "Refraction " + effect.refraction + "% - Depth " + effect.depth;
+      }
+
+      if (effect.type === "warp") {
+        const styleLabel = { ARC: "Arc", ARC_LOWER: "Arc Lower", ARC_UPPER: "Arc Upper", FLAG: "Flag", RISE: "Rise" }[effect.warpStyle] || effect.warpStyle;
+        const axisLabel = effect.warpAxis === "VERTICAL" ? "V" : "H";
+        return styleLabel + " " + axisLabel + " - Bend " + effect.bend + "%";
       }
 
       return "Opacity " + effect.opacity + "% - Blur " + effect.radius + " - " + displayBlendMode(effect.blendMode);

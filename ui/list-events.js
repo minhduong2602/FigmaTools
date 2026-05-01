@@ -1,4 +1,39 @@
 function bindEvents() {
+      contentEl.querySelectorAll("[data-blend-options]").forEach(function (row) {
+        row.ondblclick = function () {
+          openBlendOptionsModal();
+        };
+      });
+
+      contentEl.querySelectorAll("[data-blend-edit]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          openBlendOptionsModal();
+        };
+      });
+
+      contentEl.querySelectorAll("[data-swatch-apply]").forEach(function (button) {
+        button.onclick = function () {
+          const layer = selectedLayer();
+          if (!layer) return;
+          post({ type: "apply-swatch", layerId: layer.id, swatchId: button.dataset.swatchApply });
+        };
+      });
+
+      contentEl.querySelectorAll("[data-swatch-remove]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          post({ type: "remove-swatch", swatchId: button.dataset.swatchRemove });
+        };
+      });
+
+      contentEl.querySelectorAll("[data-object-tool]").forEach(function (input) {
+        input.oninput = function () {
+          const key = input.dataset.objectTool;
+          objectToolsState[key] = input.value === "" ? 0 : Number(input.value);
+        };
+      });
+
       contentEl.querySelectorAll("[data-object-row]").forEach(function (row) {
         row.ondblclick = function () {
           openObjectModal();
@@ -114,6 +149,48 @@ function bindEvents() {
           const effectId = row.dataset.effect;
           selectedLayerId = layerId;
           openEffectModal(layerId, effectId);
+        };
+
+        row.ondragstart = function (event) {
+          draggedEffectId = row.dataset.effect;
+          draggedEffectLayerId = row.dataset.layer;
+          selectedLayerId = draggedEffectLayerId;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedEffectId);
+          event.stopPropagation();
+        };
+
+        row.ondragover = function (event) {
+          if (!draggedEffectId) return;
+          if (row.dataset.layer !== draggedEffectLayerId) return;
+          if (row.dataset.effect === draggedEffectId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          row.classList.add("drop-before");
+        };
+
+        row.ondragleave = function () {
+          row.classList.remove("drop-before");
+        };
+
+        row.ondrop = function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          row.classList.remove("drop-before");
+          var targetEffectId = row.dataset.effect;
+          if (!draggedEffectId || draggedEffectId === targetEffectId) return;
+          if (row.dataset.layer !== draggedEffectLayerId) return;
+          post({ type: "reorder-effect", layerId: draggedEffectLayerId, effectId: draggedEffectId, beforeEffectId: targetEffectId });
+          draggedEffectId = "";
+          draggedEffectLayerId = "";
+        };
+
+        row.ondragend = function () {
+          draggedEffectId = "";
+          draggedEffectLayerId = "";
+          contentEl.querySelectorAll(".drop-before").forEach(function (item) {
+            item.classList.remove("drop-before");
+          });
         };
       });
     }

@@ -10,13 +10,16 @@ function solidPaint(hex, opacity) {
 function gradientPaint(layer) {
   const opacity = layer.opacity / 100;
   const angle = layer.paintType === "GRADIENT_LINEAR" ? layer.gradientAngle : 0;
+  const stops = Array.isArray(layer.gradientStops) && layer.gradientStops.length ? layer.gradientStops : defaultGradientStops(layer.gradientStart, layer.gradientEnd);
   return {
     type: layer.paintType,
     gradientTransform: gradientTransform(angle),
-    gradientStops: [
-      { position: 0, color: Object.assign({}, hexToRgb(layer.gradientStart), { a: opacity }) },
-      { position: 1, color: Object.assign({}, hexToRgb(layer.gradientEnd), { a: opacity }) }
-    ],
+    gradientStops: stops.map(function (stop) {
+      return {
+        position: clampNumber(stop.position, 0, 100, 0) / 100,
+        color: Object.assign({}, hexToRgb(stop.color), { a: opacity })
+      };
+    }),
     visible: true
   };
 }
@@ -81,6 +84,13 @@ function paintToLayerFields(paint, fallbackColor) {
       color: start,
       gradientStart: start,
       gradientEnd: end,
+      gradientStops: stops.length ? stops.map(function (stop) {
+        return {
+          id: createId(),
+          position: clampNumber(Number(stop.position) * 100, 0, 100, 0),
+          color: gradientStopToHex(stop) || start
+        };
+      }) : defaultGradientStops(start, end),
       gradientAngle: 0
     };
   }
@@ -91,6 +101,7 @@ function paintToLayerFields(paint, fallbackColor) {
     color,
     gradientStart: color,
     gradientEnd: DEFAULT_GRADIENT_END,
+    gradientStops: defaultGradientStops(color, DEFAULT_GRADIENT_END),
     gradientAngle: 0
   };
 }

@@ -7,14 +7,43 @@
     </div>
   </div>
 
-  <div class="bar">
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-appearance">Appearance</button>
+    <button class="tab-btn" id="tab-object">Object</button>
+    <button class="tab-btn" id="tab-swatches">Swatches</button>
+    <button class="tab-btn" id="tab-blend">Blend</button>
+  </div>
+
+  <div class="bar" id="appearance-tools">
     <button id="wrap" title="Create stack"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="5" y="5" width="11" height="11"></rect><path d="M16 8h4"></path><path d="M18 6v4"></path></svg></button>
     <button id="detach" class="danger" title="Detach"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M9 7H7a5 5 0 0 0 0 10h2"></path><path d="M15 7h2a5 5 0 0 1 0 10h-2"></path><path d="M8 12h8"></path><path d="M4 4l16 16"></path></svg></button>
   </div>
 
+  <div class="bar blend-bar" id="blend-tools" hidden>
+    <button id="blend-make" title="Make blend"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="12" r="3"></circle><path d="M9 12h6"></path></svg></button>
+    <button id="blend-edit-endpoints" title="Show/edit endpoints"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="4" y="5" width="6" height="6"></rect><rect x="14" y="13" width="6" height="6"></rect><path d="M10 8h4"></path><path d="M14 16h-4"></path><path d="M7 14v3"></path><path d="M5.5 15.5h3"></path></svg></button>
+    <button id="blend-select-start" title="Select start endpoint"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="7" cy="12" r="3"></circle><path d="M11 12h7"></path><path d="M15 8l4 4-4 4"></path></svg></button>
+    <button id="blend-select-end" title="Select end endpoint"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M6 12h7"></path><path d="M9 8l-4 4 4 4"></path><circle cx="17" cy="12" r="3"></circle></svg></button>
+    <button id="blend-update" title="Update blend"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"></path><path d="M20 4v6h-6"></path></svg></button>
+    <button id="blend-options" title="Blend options"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M4 7h10"></path><path d="M18 7h2"></path><circle cx="16" cy="7" r="2"></circle><path d="M4 17h2"></path><path d="M10 17h10"></path><circle cx="8" cy="17" r="2"></circle></svg></button>
+    <button id="blend-reverse" title="Reverse front to back"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M7 7h10"></path><path d="M13 3l4 4-4 4"></path><path d="M17 17H7"></path><path d="M11 21l-4-4 4-4"></path></svg></button>
+    <button id="blend-expand" title="Expand blend"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M8 8h8v8H8z"></path><path d="M4 4h4"></path><path d="M16 4h4v4"></path><path d="M20 16v4h-4"></path><path d="M8 20H4v-4"></path></svg></button>
+    <button id="blend-release" class="danger" title="Release blend"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M7 7l10 10"></path><path d="M17 7L7 17"></path><circle cx="6" cy="12" r="2"></circle><circle cx="18" cy="12" r="2"></circle></svg></button>
+  </div>
+
+  <div class="bar swatches-bar" id="swatches-tools" hidden>
+    <button id="new-swatch" title="Add selected object paint to swatches"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></button>
+    <button id="save-swatch" title="Save selected stack paint"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M5 5h14v14H5z"></path><path d="M12 8v8"></path><path d="M8 12h8"></path></svg></button>
+  </div>
+
+  <div class="bar object-bar" id="object-tools" hidden>
+    <button id="simplify-path" title="Simplify path"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M4 17c5-11 10-11 16-4"></path><path d="M5 17h.01"></path><path d="M12 8h.01"></path><path d="M19 13h.01"></path></svg></button>
+    <button id="smooth-path" title="Smooth path"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M4 15c4-7 8-7 12 0 1 2 3 2 4 0"></path></svg></button>
+  </div>
+
   <section id="content" class="panel"></section>
 
-  <div class="footer">
+  <div class="footer" id="appearance-footer">
     <button class="footer-btn" data-add="fill" title="Add fill"><svg class="icon-svg fill-icon" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
     <button class="footer-btn" data-add="stroke" title="Add stroke"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
     <button class="footer-btn" id="fx" title="Add effect to selected stack"><span class="fx-label">fx</span></button>
@@ -45,6 +74,7 @@
     <button class="fx-item" data-fx-kind="convertShape">Convert to Shape</button>
     <button class="fx-item" data-fx-kind="colorHalftone">Color Halftone</button>
     <button class="fx-item" data-fx-kind="scribble">Scribble</button>
+    <button class="fx-item" data-fx-kind="warp">Warp</button>
     <button class="fx-item" data-fx-kind="transform">Transform</button>
   </div>
 

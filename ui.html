@@ -78,6 +78,46 @@
       border-bottom: 1px solid #424242;
     }
 
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-bottom: 1px solid #1f1f1f;
+      background: #252525;
+    }
+
+    .tab-btn {
+      min-height: 30px;
+      border: 0;
+      border-right: 1px solid #1f1f1f;
+      border-radius: 0;
+      background: #2a2a2a;
+      color: #bdbdbd;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .tab-btn.active {
+      background: #353535;
+      color: #fff;
+      box-shadow: inset 0 2px 0 #8aa4ff;
+    }
+
+    .blend-bar {
+      grid-template-columns: repeat(9, 1fr);
+    }
+
+    .swatches-bar {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .object-bar {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
     .panel {
       flex: 1;
       overflow-y: auto;
@@ -327,6 +367,88 @@
       min-width: 0;
     }
 
+    .gradient-editor {
+      display: grid;
+      gap: 6px;
+    }
+
+    .gradient-ramp {
+      position: relative;
+      height: 28px;
+      border: 1px solid #666;
+      border-radius: 3px;
+      box-shadow: inset 0 0 0 1px #111;
+      cursor: crosshair;
+    }
+
+    .gradient-stop {
+      position: absolute;
+      bottom: -5px;
+      width: 12px;
+      height: 12px;
+      min-height: 12px;
+      padding: 0;
+      border: 2px solid #f1f1f1;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px #111;
+      transform: translateX(-50%);
+      cursor: ew-resize;
+    }
+
+    .gradient-stop-list {
+      display: grid;
+      gap: 4px;
+    }
+
+    .gradient-stop-row {
+      display: grid;
+      grid-template-columns: 34px minmax(54px, 1fr) 28px;
+      gap: 5px;
+      align-items: end;
+    }
+
+    .gradient-stop-row input[type="color"] {
+      min-height: 26px;
+      padding: 2px;
+    }
+
+    .swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 4px;
+      padding: 6px;
+    }
+
+    .swatch-card {
+      display: grid;
+      gap: 2px;
+      position: relative;
+      min-width: 0;
+    }
+
+    .swatch-chip {
+      width: 100%;
+      aspect-ratio: 1;
+      min-height: 0;
+      border: 1px solid #686868;
+      border-radius: 3px;
+      box-shadow: inset 0 0 0 1px #111;
+    }
+
+    .swatch-delete {
+      position: absolute;
+      right: 2px;
+      top: 2px;
+      width: 16px;
+      min-height: 16px;
+      padding: 0;
+      background: rgba(32, 32, 32, 0.78);
+    }
+
+    .swatch-name {
+      display: none;
+    }
+
     .field-note {
       padding: 5px 6px;
       border: 1px solid #5a5140;
@@ -530,14 +652,43 @@
       </div>
     </div>
 
-    <div class="bar">
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-appearance">Appearance</button>
+      <button class="tab-btn" id="tab-object">Object</button>
+      <button class="tab-btn" id="tab-swatches">Swatches</button>
+      <button class="tab-btn" id="tab-blend">Blend</button>
+    </div>
+
+    <div class="bar" id="appearance-tools">
       <button id="wrap" title="Create stack"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="5" y="5" width="11" height="11"></rect><path d="M16 8h4"></path><path d="M18 6v4"></path></svg></button>
       <button id="detach" class="danger" title="Detach"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M9 7H7a5 5 0 0 0 0 10h2"></path><path d="M15 7h2a5 5 0 0 1 0 10h-2"></path><path d="M8 12h8"></path><path d="M4 4l16 16"></path></svg></button>
     </div>
 
+    <div class="bar blend-bar" id="blend-tools" hidden>
+      <button id="blend-make" title="Make blend"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="12" r="3"></circle><path d="M9 12h6"></path></svg></button>
+      <button id="blend-edit-endpoints" title="Show/edit endpoints"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="4" y="5" width="6" height="6"></rect><rect x="14" y="13" width="6" height="6"></rect><path d="M10 8h4"></path><path d="M14 16h-4"></path><path d="M7 14v3"></path><path d="M5.5 15.5h3"></path></svg></button>
+      <button id="blend-select-start" title="Select start endpoint"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="7" cy="12" r="3"></circle><path d="M11 12h7"></path><path d="M15 8l4 4-4 4"></path></svg></button>
+      <button id="blend-select-end" title="Select end endpoint"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M6 12h7"></path><path d="M9 8l-4 4 4 4"></path><circle cx="17" cy="12" r="3"></circle></svg></button>
+      <button id="blend-update" title="Update blend"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"></path><path d="M20 4v6h-6"></path></svg></button>
+      <button id="blend-options" title="Blend options"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M4 7h10"></path><path d="M18 7h2"></path><circle cx="16" cy="7" r="2"></circle><path d="M4 17h2"></path><path d="M10 17h10"></path><circle cx="8" cy="17" r="2"></circle></svg></button>
+      <button id="blend-reverse" title="Reverse front to back"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M7 7h10"></path><path d="M13 3l4 4-4 4"></path><path d="M17 17H7"></path><path d="M11 21l-4-4 4-4"></path></svg></button>
+      <button id="blend-expand" title="Expand blend"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M8 8h8v8H8z"></path><path d="M4 4h4"></path><path d="M16 4h4v4"></path><path d="M20 16v4h-4"></path><path d="M8 20H4v-4"></path></svg></button>
+      <button id="blend-release" class="danger" title="Release blend"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M7 7l10 10"></path><path d="M17 7L7 17"></path><circle cx="6" cy="12" r="2"></circle><circle cx="18" cy="12" r="2"></circle></svg></button>
+    </div>
+
+    <div class="bar swatches-bar" id="swatches-tools" hidden>
+      <button id="new-swatch" title="Add selected object paint to swatches"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg></button>
+      <button id="save-swatch" title="Save selected stack paint"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M5 5h14v14H5z"></path><path d="M12 8v8"></path><path d="M8 12h8"></path></svg></button>
+    </div>
+
+    <div class="bar object-bar" id="object-tools" hidden>
+      <button id="simplify-path" title="Simplify path"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M4 17c5-11 10-11 16-4"></path><path d="M5 17h.01"></path><path d="M12 8h.01"></path><path d="M19 13h.01"></path></svg></button>
+      <button id="smooth-path" title="Smooth path"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M4 15c4-7 8-7 12 0 1 2 3 2 4 0"></path></svg></button>
+    </div>
+
     <section id="content" class="panel"></section>
 
-    <div class="footer">
+    <div class="footer" id="appearance-footer">
       <button class="footer-btn" data-add="fill" title="Add fill"><svg class="icon-svg fill-icon" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
       <button class="footer-btn" data-add="stroke" title="Add stroke"><svg class="icon-svg" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
       <button class="footer-btn" id="fx" title="Add effect to selected stack"><span class="fx-label">fx</span></button>
@@ -568,6 +719,7 @@
       <button class="fx-item" data-fx-kind="convertShape">Convert to Shape</button>
       <button class="fx-item" data-fx-kind="colorHalftone">Color Halftone</button>
       <button class="fx-item" data-fx-kind="scribble">Scribble</button>
+      <button class="fx-item" data-fx-kind="warp">Warp</button>
       <button class="fx-item" data-fx-kind="transform">Transform</button>
     </div>
 
@@ -584,186 +736,347 @@
 
   <script>
 const state = {
-      hasSelection: false,
-      selectedCount: 0,
-      isAppearance: false,
-      groupName: "",
-      baseName: "",
-      baseType: "",
-      isTextBase: false,
-      textContent: "",
-      textProperties: null,
-      availableFonts: [],
-      objectProperties: null,
-      globalAppearance: {
-        opacity: 100,
-        blendMode: "NORMAL"
-      },
-      stack: []
-    };
+  hasSelection: false,
+  selectedCount: 0,
+  isAppearance: false,
+  groupName: "",
+  baseName: "",
+  baseType: "",
+  isTextBase: false,
+  textContent: "",
+  textProperties: null,
+  availableFonts: [],
+  objectProperties: null,
+  globalAppearance: {
+    opacity: 100,
+    blendMode: "NORMAL"
+  },
+  stack: [],
+  isBlend: false,
+  blendName: "",
+  blendOptions: {
+    spacingMode: "SPECIFIED_STEPS",
+    steps: 8,
+    distance: 24,
+    reverseFrontToBack: false,
+    editEndpoints: false
+  },
+  swatches: []
+};
 
-    const expanded = {};
-    const pendingTimers = {};
-    const pendingMessages = {};
-    const trashIcon = '<svg class="icon-svg" viewBox="0 0 24 24"><path d="M6 7h12"></path><path d="M10 7V5h4v2"></path><path d="M8 7l1 13h6l1-13"></path></svg>';
-    const editIcon = '<svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
-    let dirtyWhileEditing = false;
-    let selectedLayerId = "";
-    let fxMenuOpen = false;
-    const printSettings = {
-      profile: "U.S. Web Coated (SWOP) v2",
-      pdfTarget: "PDF/X-4 intent",
-      bleedMm: 3,
-      safeMm: 3,
-      dpi: 300,
-      trimWidthMm: 210,
-      trimHeightMm: 297,
-      blackPolicy: "100K text, rich black only for large solids"
-    };
-    const modalState = {
-      kind: "",
-      layerId: "",
-      effectId: ""
-    };
+const swatchDraft = {
+  type: "solid",
+  color: "#4F8DFF",
+  paintType: "GRADIENT_LINEAR",
+  gradientAngle: 0,
+  gradientStops: [
+    { id: "draft_start", position: 0, color: "#4F8DFF" },
+    { id: "draft_end", position: 100, color: "#B96BFF" }
+  ]
+};
 
-    const appEl = document.getElementById("app");
-    const statusEl = document.getElementById("status");
-    const contentEl = document.getElementById("content");
-    const wrapBtn = document.getElementById("wrap");
-    const detachBtn = document.getElementById("detach");
-    const fxBtn = document.getElementById("fx");
-    const fxMenu = document.getElementById("fx-menu");
-    const duplicateBtn = document.getElementById("duplicate-layer");
-    const deleteBtn = document.getElementById("delete-layer");
-    const copyStyleBtn = document.getElementById("copy-style");
-    const pasteStyleBtn = document.getElementById("paste-style");
-    const basicBtn = document.getElementById("basic");
-    const printExportBtn = document.getElementById("print-export");
-    const clearBtn = document.getElementById("clear");
-    const editorModal = document.getElementById("editor-modal");
-    const modalTitle = document.getElementById("modal-title");
-    const modalBody = document.getElementById("modal-body");
-    const modalClose = document.getElementById("modal-close");
-    let draggedLayerId = "";
+const objectToolsState = {
+  simplifyTolerance: 2,
+  smoothAmount: 2
+};
+
+const expanded = {};
+const pendingTimers = {};
+const pendingMessages = {};
+const trashIcon = '<svg class="icon-svg" viewBox="0 0 24 24"><path d="M6 7h12"></path><path d="M10 7V5h4v2"></path><path d="M8 7l1 13h6l1-13"></path></svg>';
+const editIcon = '<svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
+let dirtyWhileEditing = false;
+let selectedLayerId = "";
+let fxMenuOpen = false;
+let activeTab = "appearance";
+const printSettings = {
+  profile: "U.S. Web Coated (SWOP) v2",
+  pdfTarget: "PDF/X-4 intent",
+  bleedMm: 3,
+  safeMm: 3,
+  dpi: 300,
+  trimWidthMm: 210,
+  trimHeightMm: 297,
+  blackPolicy: "100K text, rich black only for large solids"
+};
+const modalState = {
+  kind: "",
+  layerId: "",
+  effectId: ""
+};
+
+const appEl = document.getElementById("app");
+const statusEl = document.getElementById("status");
+const contentEl = document.getElementById("content");
+const appearanceTabBtn = document.getElementById("tab-appearance");
+const objectTabBtn = document.getElementById("tab-object");
+const swatchesTabBtn = document.getElementById("tab-swatches");
+const blendTabBtn = document.getElementById("tab-blend");
+const appearanceTools = document.getElementById("appearance-tools");
+const objectTools = document.getElementById("object-tools");
+const blendTools = document.getElementById("blend-tools");
+const swatchesTools = document.getElementById("swatches-tools");
+const appearanceFooter = document.getElementById("appearance-footer");
+const wrapBtn = document.getElementById("wrap");
+const detachBtn = document.getElementById("detach");
+const blendMakeBtn = document.getElementById("blend-make");
+const blendEditEndpointsBtn = document.getElementById("blend-edit-endpoints");
+const blendSelectStartBtn = document.getElementById("blend-select-start");
+const blendSelectEndBtn = document.getElementById("blend-select-end");
+const blendUpdateBtn = document.getElementById("blend-update");
+const blendOptionsBtn = document.getElementById("blend-options");
+const blendReverseBtn = document.getElementById("blend-reverse");
+const blendExpandBtn = document.getElementById("blend-expand");
+const blendReleaseBtn = document.getElementById("blend-release");
+const newSwatchBtn = document.getElementById("new-swatch");
+const saveSwatchBtn = document.getElementById("save-swatch");
+const simplifyPathBtn = document.getElementById("simplify-path");
+const smoothPathBtn = document.getElementById("smooth-path");
+const fxBtn = document.getElementById("fx");
+const fxMenu = document.getElementById("fx-menu");
+const duplicateBtn = document.getElementById("duplicate-layer");
+const deleteBtn = document.getElementById("delete-layer");
+const copyStyleBtn = document.getElementById("copy-style");
+const pasteStyleBtn = document.getElementById("paste-style");
+const basicBtn = document.getElementById("basic");
+const printExportBtn = document.getElementById("print-export");
+const clearBtn = document.getElementById("clear");
+const editorModal = document.getElementById("editor-modal");
+const modalTitle = document.getElementById("modal-title");
+const modalBody = document.getElementById("modal-body");
+const modalClose = document.getElementById("modal-close");
+let draggedLayerId = "";
+let draggedEffectId = "";
+let draggedEffectLayerId = "";
+let pendingEffectModal = null;
+let gradientDrag = null;
 
 wrapBtn.onclick = function () {
-      selectedLayerId = "";
-      post({ type: "wrap-selection" });
-    };
+  selectedLayerId = "";
+  post({ type: "wrap-selection" });
+};
 
-    detachBtn.onclick = function () {
-      selectedLayerId = "";
-      post({ type: "detach" });
-    };
+appearanceTabBtn.onclick = function () {
+  activeTab = "appearance";
+  closeModal();
+  render();
+};
 
-    duplicateBtn.onclick = function () {
-      const layer = selectedLayer();
-      if (layer) {
-        selectedLayerId = "";
-        post({ type: "duplicate-layer", layerId: layer.id });
+objectTabBtn.onclick = function () {
+  activeTab = "object";
+  fxMenuOpen = false;
+  closeModal();
+  render();
+};
+
+blendTabBtn.onclick = function () {
+  activeTab = "blend";
+  fxMenuOpen = false;
+  closeModal();
+  render();
+};
+
+swatchesTabBtn.onclick = function () {
+  activeTab = "swatches";
+  fxMenuOpen = false;
+  closeModal();
+  render();
+};
+
+detachBtn.onclick = function () {
+  selectedLayerId = "";
+  post({ type: "detach" });
+};
+
+blendMakeBtn.onclick = function () {
+  post({ type: "blend-make" });
+};
+
+blendEditEndpointsBtn.onclick = function () {
+  post({ type: "blend-toggle-edit-endpoints" });
+};
+
+blendSelectStartBtn.onclick = function () {
+  post({ type: "blend-select-start" });
+};
+
+blendSelectEndBtn.onclick = function () {
+  post({ type: "blend-select-end" });
+};
+
+blendUpdateBtn.onclick = function () {
+  post({ type: "blend-update" });
+};
+
+blendOptionsBtn.onclick = function () {
+  openBlendOptionsModal();
+};
+
+blendReverseBtn.onclick = function () {
+  post({ type: "blend-reverse-front-to-back" });
+};
+
+blendExpandBtn.onclick = function () {
+  post({ type: "blend-expand" });
+};
+
+blendReleaseBtn.onclick = function () {
+  post({ type: "blend-release" });
+};
+
+newSwatchBtn.onclick = function () {
+  post({ type: "save-selection-swatch" });
+};
+
+saveSwatchBtn.onclick = function () {
+  const layer = selectedLayer();
+  if (!layer) return;
+  post({ type: "save-swatch", layerId: layer.id });
+};
+
+simplifyPathBtn.onclick = function () {
+  post({ type: "simplify-path", tolerance: objectToolsState.simplifyTolerance });
+};
+
+smoothPathBtn.onclick = function () {
+  post({ type: "smooth-path", amount: objectToolsState.smoothAmount });
+};
+
+duplicateBtn.onclick = function () {
+  const layer = selectedLayer();
+  if (layer) {
+    selectedLayerId = "";
+    post({ type: "duplicate-layer", layerId: layer.id });
+  }
+};
+
+deleteBtn.onclick = function () {
+  const layer = selectedLayer();
+  if (layer) {
+    selectedLayerId = "";
+    post({ type: "remove-layer", layerId: layer.id });
+  }
+};
+
+copyStyleBtn.onclick = function () {
+  post({ type: "copy-style" });
+};
+
+pasteStyleBtn.onclick = function () {
+  selectedLayerId = "";
+  fxMenuOpen = false;
+  post({ type: "paste-style" });
+};
+
+basicBtn.onclick = function () {
+  selectedLayerId = "";
+  fxMenuOpen = false;
+  post({ type: "reduce-basic" });
+};
+
+printExportBtn.onclick = function () {
+  openPrintModal();
+};
+
+clearBtn.onclick = function () {
+  selectedLayerId = "";
+  fxMenuOpen = false;
+  post({ type: "clear-appearance" });
+};
+
+fxBtn.onclick = function (event) {
+  event.stopPropagation();
+  if (!selectedLayer()) return;
+  fxMenuOpen = !fxMenuOpen;
+  renderFxMenu();
+};
+
+document.querySelectorAll("[data-add]").forEach(function (button) {
+  button.onclick = function () {
+    selectedLayerId = "";
+    fxMenuOpen = false;
+    post({ type: "add-layer", layerKind: button.dataset.add });
+  };
+});
+
+document.querySelectorAll("[data-fx-kind]").forEach(function (button) {
+  button.onclick = function () {
+    const layer = selectedLayer();
+    if (!layer) return;
+    fxMenuOpen = false;
+    renderFxMenu();
+    expanded[layer.id] = true;
+    pendingEffectModal = { layerId: layer.id, effectKind: button.dataset.fxKind };
+    post({ type: "add-effect", layerId: layer.id, effectKind: button.dataset.fxKind });
+  };
+});
+
+document.addEventListener("click", function (event) {
+  if (!fxMenuOpen) return;
+  if (event.target === fxBtn || fxMenu.contains(event.target)) return;
+  fxMenuOpen = false;
+  renderFxMenu();
+});
+
+modalClose.onclick = function () {
+  closeModal();
+};
+
+editorModal.onclick = function (event) {
+  if (event.target === editorModal) closeModal();
+};
+
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape" && modalState.kind) closeModal();
+});
+
+onmessage = function (event) {
+  const message = event.data.pluginMessage;
+  if (!message) return;
+  if (message.type === "print-export-result") {
+    downloadPrintPackage(message);
+    return;
+  }
+  if (message.type !== "selection-state") return;
+  Object.assign(state, message);
+  ensureExpandedDefaults();
+  ensureSelectedLayer();
+  if (isFieldEditing()) {
+    dirtyWhileEditing = true;
+    return;
+  }
+  if (pendingEffectModal) {
+    var pending = pendingEffectModal;
+    pendingEffectModal = null;
+    render();
+    var layer = findLayer(pending.layerId);
+    if (layer) {
+      var effect = layer.effects.filter(function (e) { return e.type === pending.effectKind; }).slice(-1)[0];
+      if (effect) {
+        openEffectModal(layer.id, effect.id);
       }
-    };
-
-    deleteBtn.onclick = function () {
-      const layer = selectedLayer();
-      if (layer) {
-        selectedLayerId = "";
-        post({ type: "remove-layer", layerId: layer.id });
-      }
-    };
-
-    copyStyleBtn.onclick = function () {
-      post({ type: "copy-style" });
-    };
-
-    pasteStyleBtn.onclick = function () {
-      selectedLayerId = "";
-      fxMenuOpen = false;
-      post({ type: "paste-style" });
-    };
-
-    basicBtn.onclick = function () {
-      selectedLayerId = "";
-      fxMenuOpen = false;
-      post({ type: "reduce-basic" });
-    };
-
-    printExportBtn.onclick = function () {
-      openPrintModal();
-    };
-
-    clearBtn.onclick = function () {
-      selectedLayerId = "";
-      fxMenuOpen = false;
-      post({ type: "clear-appearance" });
-    };
-
-    fxBtn.onclick = function (event) {
-      event.stopPropagation();
-      if (!selectedLayer()) return;
-      fxMenuOpen = !fxMenuOpen;
-      renderFxMenu();
-    };
-
-    document.querySelectorAll("[data-add]").forEach(function (button) {
-      button.onclick = function () {
-        selectedLayerId = "";
-        fxMenuOpen = false;
-        post({ type: "add-layer", layerKind: button.dataset.add });
-      };
-    });
-
-    document.querySelectorAll("[data-fx-kind]").forEach(function (button) {
-      button.onclick = function () {
-        const layer = selectedLayer();
-        if (!layer) return;
-        fxMenuOpen = false;
-        renderFxMenu();
-        expanded[layer.id] = true;
-        post({ type: "add-effect", layerId: layer.id, effectKind: button.dataset.fxKind });
-      };
-    });
-
-    document.addEventListener("click", function (event) {
-      if (!fxMenuOpen) return;
-      if (event.target === fxBtn || fxMenu.contains(event.target)) return;
-      fxMenuOpen = false;
-      renderFxMenu();
-    });
-
-    modalClose.onclick = function () {
-      closeModal();
-    };
-
-    editorModal.onclick = function (event) {
-      if (event.target === editorModal) closeModal();
-    };
-
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && modalState.kind) closeModal();
-    });
-
-    onmessage = function (event) {
-      const message = event.data.pluginMessage;
-      if (!message) return;
-      if (message.type === "print-export-result") {
-        downloadPrintPackage(message);
-        return;
-      }
-      if (message.type !== "selection-state") return;
-      Object.assign(state, message);
-      ensureExpandedDefaults();
-      ensureSelectedLayer();
-      if (isFieldEditing()) {
-        dirtyWhileEditing = true;
-        return;
-      }
-      render();
-    };
+    }
+  } else {
+    render();
+  }
+};
 
 function render() {
       dirtyWhileEditing = false;
       ensureSelectedLayer();
+      updateTabChrome();
+      if (activeTab === "blend") {
+        renderBlendPanel();
+        return;
+      }
+      if (activeTab === "object") {
+        renderObjectPanel();
+        return;
+      }
+      if (activeTab === "swatches") {
+        renderSwatchesPanel();
+        return;
+      }
       wrapBtn.disabled = !state.hasSelection || state.selectedCount !== 1 || state.isAppearance;
       detachBtn.disabled = !state.isAppearance;
       fxBtn.disabled = !state.isAppearance || !selectedLayer();
@@ -809,6 +1122,147 @@ function render() {
       bindEvents();
       renderFxMenu();
       renderModal();
+    }
+
+    function updateTabChrome() {
+      appearanceTabBtn.classList.toggle("active", activeTab === "appearance");
+      objectTabBtn.classList.toggle("active", activeTab === "object");
+      swatchesTabBtn.classList.toggle("active", activeTab === "swatches");
+      blendTabBtn.classList.toggle("active", activeTab === "blend");
+      appearanceTools.hidden = activeTab !== "appearance";
+      objectTools.hidden = activeTab !== "object";
+      appearanceFooter.hidden = activeTab !== "appearance";
+      blendTools.hidden = activeTab !== "blend";
+      swatchesTools.hidden = activeTab !== "swatches";
+      fxMenuOpen = activeTab === "appearance" ? fxMenuOpen : false;
+      renderFxMenu();
+    }
+
+    function renderObjectPanel() {
+      closeModalIfAppearanceOnly();
+      const hasOne = state.selectedCount === 1;
+      simplifyPathBtn.disabled = !hasOne;
+      smoothPathBtn.disabled = !hasOne;
+      statusEl.textContent = hasOne ? "Object path tools" : "Select one vector path.";
+      contentEl.innerHTML = objectToolsTemplate();
+      bindEvents();
+      renderModal();
+    }
+
+    function objectToolsTemplate() {
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Path Cleanup</div>',
+        '<div class="fields two">',
+        '<div class="field"><label>Simplify tolerance</label><input type="number" min="0.1" max="50" step="0.1" data-object-tool="simplifyTolerance" value="' + objectToolsState.simplifyTolerance + '"></div>',
+        '<div class="field"><label>Smooth amount</label><input type="number" min="1" max="8" step="1" data-object-tool="smoothAmount" value="' + objectToolsState.smoothAmount + '"></div>',
+        '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function renderSwatchesPanel() {
+      closeModalIfAppearanceOnly();
+      newSwatchBtn.disabled = state.selectedCount !== 1;
+      saveSwatchBtn.disabled = !state.isAppearance || !selectedLayer();
+      document.querySelectorAll("[data-add]").forEach(function (button) {
+        button.disabled = true;
+      });
+      const target = selectedLayer();
+      if (state.isAppearance && target) {
+        statusEl.textContent = "Swatches - apply to " + target.name;
+      } else {
+        statusEl.textContent = "Swatches";
+      }
+      contentEl.innerHTML = swatchesTemplate();
+      bindEvents();
+      renderModal();
+    }
+
+    function swatchesTemplate() {
+      const swatches = state.swatches || [];
+      if (!swatches.length) {
+        return '<div class="empty">No swatches saved.</div>';
+      }
+      return [
+        '<div class="swatch-grid">',
+        swatches.map(function (swatch) {
+          return [
+            '<div class="swatch-card" data-swatch="' + swatch.id + '" title="' + escapeHtml(swatch.name || swatch.type) + '">',
+            '<button class="swatch-chip" data-swatch-apply="' + swatch.id + '" style="' + swatchStyleFromSwatch(swatch) + '"></button>',
+            '<button class="footer-btn danger swatch-delete" data-swatch-remove="' + swatch.id + '" title="Remove swatch">' + trashIcon + '</button>',
+            '<div class="swatch-name">' + escapeHtml(swatchLabel(swatch)) + '</div>',
+            '</div>'
+          ].join("");
+        }).join(""),
+        '</div>'
+      ].join("");
+    }
+
+    function renderBlendPanel() {
+      closeModalIfAppearanceOnly();
+      blendMakeBtn.disabled = state.selectedCount !== 2 || state.isBlend;
+      blendEditEndpointsBtn.disabled = !state.isBlend;
+      blendSelectStartBtn.disabled = !state.isBlend;
+      blendSelectEndBtn.disabled = !state.isBlend;
+      blendUpdateBtn.disabled = !state.isBlend;
+      blendOptionsBtn.disabled = !state.isBlend;
+      blendReverseBtn.disabled = !state.isBlend;
+      blendExpandBtn.disabled = !state.isBlend;
+      blendReleaseBtn.disabled = !state.isBlend;
+      blendEditEndpointsBtn.classList.toggle("active", state.isBlend && state.blendOptions && state.blendOptions.editEndpoints === true);
+      document.querySelectorAll("[data-add]").forEach(function (button) {
+        button.disabled = true;
+      });
+
+      if (state.isBlend) {
+        const options = state.blendOptions || {};
+        statusEl.textContent = state.blendName + " - " + blendSummary(options);
+        contentEl.innerHTML = blendTemplate(options);
+        bindEvents();
+        renderModal();
+        return;
+      }
+
+      if (state.selectedCount === 2) {
+        statusEl.textContent = "Ready to make a blend.";
+        contentEl.innerHTML = '<div class="empty">Use Make Blend to generate live interpolated objects between the two selected objects.</div>';
+      } else {
+        statusEl.textContent = "Select two objects.";
+        contentEl.innerHTML = '<div class="empty">Select exactly two objects, then switch here and click Make Blend.</div>';
+      }
+      renderModal();
+    }
+
+    function closeModalIfAppearanceOnly() {
+      if (modalState.kind === "object" || modalState.kind === "layer" || modalState.kind === "effect" || modalState.kind === "print") {
+        closeModal();
+      }
+    }
+
+    function blendTemplate(options) {
+      return [
+        '<article data-blend="true">',
+        '<div class="row object" data-blend-options title="Double click to edit blend options">',
+        '<div class="eye"></div>',
+        '<div class="caret"></div>',
+        '<div class="label"><span class="label-name">Blend</span><span class="summary">' + blendSummary(options) + '</span></div>',
+        '<button class="footer-btn" data-blend-edit title="Blend options">' + editIcon + '</button>',
+        '</div>',
+        '</article>',
+        '<div class="modal-section blend-info">',
+        '<div class="modal-section-title">Endpoints</div>',
+        '<div class="summary">' + (options.editEndpoints ? "Editable sources visible" : "Sources hidden") + '</div>',
+        '</div>'
+      ].join("");
+    }
+
+    function blendSummary(options) {
+      const mode = options.spacingMode || "SPECIFIED_STEPS";
+      const endpointText = options.editEndpoints ? " - endpoints" : "";
+      if (mode === "SMOOTH_COLOR") return "Smooth Color" + endpointText;
+      if (mode === "SPECIFIED_DISTANCE") return "Distance " + options.distance + " px" + endpointText;
+      return options.steps + " steps" + endpointText;
     }
 
     function objectTemplate() {
@@ -883,10 +1337,11 @@ function render() {
       if (layer.paintType === "GRADIENT_LINEAR" || layer.paintType === "GRADIENT_RADIAL") {
         const gradientColors = [
           paintRow,
+          gradientStopEditor(layer),
           '<div class="fields three">',
-          '<div class="field"><label>Gradient start</label><input type="color" data-field="gradientStart" value="' + layer.gradientStart + '"></div>',
-          '<div class="field"><label>End</label><input type="color" data-field="gradientEnd" value="' + layer.gradientEnd + '"></div>',
           layer.paintType === "GRADIENT_LINEAR" ? '<div class="field"><label>Angle</label><input type="number" min="-360" max="360" data-field="gradientAngle" value="' + layer.gradientAngle + '"></div>' : '<div class="field"></div>',
+          '<div></div>',
+          '<div></div>',
           '</div>'
         ];
         return gradientColors.join("");
@@ -895,6 +1350,30 @@ function render() {
       return [
         paintRow,
         '<div class="fields three"><div class="field"><label>Color</label><input type="color" data-field="color" value="' + layer.color + '"></div><div></div><div></div></div>'
+      ].join("");
+    }
+
+    function gradientStopEditor(layer) {
+      const stops = normalizedUiGradientStops(layer);
+      return [
+        '<div class="gradient-editor">',
+        '<div class="gradient-ramp" data-gradient-ramp="' + layer.id + '" style="' + gradientRampStyle(layer, stops) + '">',
+        stops.map(function (stop) {
+          return '<button class="gradient-stop" data-gradient-stop="' + stop.id + '" title="' + stop.position + '%" style="left:' + stop.position + '%;background:' + stop.color + '"></button>';
+        }).join(""),
+        '</div>',
+        '<div class="gradient-stop-list">',
+        stops.map(function (stop) {
+          return [
+            '<div class="gradient-stop-row" data-gradient-stop-row="' + stop.id + '">',
+            '<input type="color" data-gradient-stop="' + stop.id + '" data-gradient-field="color" value="' + stop.color + '">',
+            '<input type="number" min="0" max="100" data-gradient-stop="' + stop.id + '" data-gradient-field="position" value="' + stop.position + '">',
+            '<button class="footer-btn danger" data-gradient-remove="' + stop.id + '" title="Remove stop">' + trashIcon + '</button>',
+            '</div>'
+          ].join("");
+        }).join(""),
+        '</div>',
+        '</div>'
       ].join("");
     }
 
@@ -931,7 +1410,7 @@ function render() {
 
     function effectTemplate(layer, effect) {
       return [
-        '<div class="row child" data-layer="' + layer.id + '" data-effect="' + effect.id + '" title="Double click to edit effect">',
+        '<div class="row child" data-layer="' + layer.id + '" data-effect="' + effect.id + '" draggable="true" title="Double click to edit effect">',
         '<div class="eye" data-effect-action="visible" title="Toggle effect">' + (effect.visible ? "o" : "-") + '</div>',
         '<div></div>',
         '<div class="label"><span class="label-name">' + escapeHtml(effect.name) + '</span><span class="fx-mark">fx</span><span class="summary">' + effectSummary(effect) + '</span></div>',
@@ -1078,7 +1557,26 @@ function render() {
         ].join("");
       }
 
-      if (effect.type === "outerGlow" || effect.type === "innerGlow") {
+      
+      if (effect.type === "warp") {
+        return [
+          '<div class="fields three">',
+          '<div class="field"><label>Style</label><select data-effect-field="warpStyle">' + enumOptions(effect.warpStyle, [
+            ["ARC", "Arc"], ["ARC_LOWER", "Arc Lower"], ["ARC_UPPER", "Arc Upper"], ["FLAG", "Flag"], ["RISE", "Rise"]
+          ]) + '</select></div>',
+          '<div class="field"><label>Axis</label><select data-effect-field="warpAxis">' + enumOptions(effect.warpAxis, [
+            ["HORIZONTAL", "Horizontal"], ["VERTICAL", "Vertical"]
+          ]) + '</select></div>',
+          '<div class="field"><label>Bend %</label><input type="number" min="-100" max="100" data-effect-field="bend" value="' + effect.bend + '"></div>',
+          '</div>',
+          '<div class="fields three">',
+          '<div class="field"><label>H Distort %</label><input type="number" min="-100" max="100" data-effect-field="hDistort" value="' + effect.hDistort + '"></div>',
+          '<div class="field"><label>V Distort %</label><input type="number" min="-100" max="100" data-effect-field="vDistort" value="' + effect.vDistort + '"></div>',
+          '<div></div>',
+          '</div>'
+        ].join("");
+      }
+if (effect.type === "outerGlow" || effect.type === "innerGlow") {
         return [
           '<div class="fields four">',
           '<div class="field"><label>Color</label><input type="color" data-effect-field="color" value="' + effect.color + '"></div>',
@@ -1164,10 +1662,51 @@ function render() {
         return "Refraction " + effect.refraction + "% - Depth " + effect.depth;
       }
 
+      if (effect.type === "warp") {
+        const styleLabel = { ARC: "Arc", ARC_LOWER: "Arc Lower", ARC_UPPER: "Arc Upper", FLAG: "Flag", RISE: "Rise" }[effect.warpStyle] || effect.warpStyle;
+        const axisLabel = effect.warpAxis === "VERTICAL" ? "V" : "H";
+        return styleLabel + " " + axisLabel + " - Bend " + effect.bend + "%";
+      }
+
       return "Opacity " + effect.opacity + "% - Blur " + effect.radius + " - " + displayBlendMode(effect.blendMode);
     }
 
 function bindEvents() {
+      contentEl.querySelectorAll("[data-blend-options]").forEach(function (row) {
+        row.ondblclick = function () {
+          openBlendOptionsModal();
+        };
+      });
+
+      contentEl.querySelectorAll("[data-blend-edit]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          openBlendOptionsModal();
+        };
+      });
+
+      contentEl.querySelectorAll("[data-swatch-apply]").forEach(function (button) {
+        button.onclick = function () {
+          const layer = selectedLayer();
+          if (!layer) return;
+          post({ type: "apply-swatch", layerId: layer.id, swatchId: button.dataset.swatchApply });
+        };
+      });
+
+      contentEl.querySelectorAll("[data-swatch-remove]").forEach(function (button) {
+        button.onclick = function (event) {
+          event.stopPropagation();
+          post({ type: "remove-swatch", swatchId: button.dataset.swatchRemove });
+        };
+      });
+
+      contentEl.querySelectorAll("[data-object-tool]").forEach(function (input) {
+        input.oninput = function () {
+          const key = input.dataset.objectTool;
+          objectToolsState[key] = input.value === "" ? 0 : Number(input.value);
+        };
+      });
+
       contentEl.querySelectorAll("[data-object-row]").forEach(function (row) {
         row.ondblclick = function () {
           openObjectModal();
@@ -1284,6 +1823,48 @@ function bindEvents() {
           selectedLayerId = layerId;
           openEffectModal(layerId, effectId);
         };
+
+        row.ondragstart = function (event) {
+          draggedEffectId = row.dataset.effect;
+          draggedEffectLayerId = row.dataset.layer;
+          selectedLayerId = draggedEffectLayerId;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedEffectId);
+          event.stopPropagation();
+        };
+
+        row.ondragover = function (event) {
+          if (!draggedEffectId) return;
+          if (row.dataset.layer !== draggedEffectLayerId) return;
+          if (row.dataset.effect === draggedEffectId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          row.classList.add("drop-before");
+        };
+
+        row.ondragleave = function () {
+          row.classList.remove("drop-before");
+        };
+
+        row.ondrop = function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          row.classList.remove("drop-before");
+          var targetEffectId = row.dataset.effect;
+          if (!draggedEffectId || draggedEffectId === targetEffectId) return;
+          if (row.dataset.layer !== draggedEffectLayerId) return;
+          post({ type: "reorder-effect", layerId: draggedEffectLayerId, effectId: draggedEffectId, beforeEffectId: targetEffectId });
+          draggedEffectId = "";
+          draggedEffectLayerId = "";
+        };
+
+        row.ondragend = function () {
+          draggedEffectId = "";
+          draggedEffectLayerId = "";
+          contentEl.querySelectorAll(".drop-before").forEach(function (item) {
+            item.classList.remove("drop-before");
+          });
+        };
       });
     }
 
@@ -1329,6 +1910,25 @@ function openObjectModal() {
       renderModal();
     }
 
+    function openBlendOptionsModal() {
+      if (!state.isBlend) return;
+      modalState.kind = "blend-options";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      fxMenuOpen = false;
+      renderFxMenu();
+      renderModal();
+    }
+
+    function openSwatchModal() {
+      modalState.kind = "swatch";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      fxMenuOpen = false;
+      renderFxMenu();
+      renderModal();
+    }
+
     function closeModal() {
       modalState.kind = "";
       modalState.layerId = "";
@@ -1345,6 +1945,26 @@ function openObjectModal() {
     function renderModal() {
       if (!modalState.kind) {
         hideModal();
+        return;
+      }
+
+      if (modalState.kind === "blend-options") {
+        if (!state.isBlend) {
+          closeModal();
+          return;
+        }
+        modalTitle.textContent = "Blend Options";
+        modalBody.innerHTML = blendOptionsModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
+        return;
+      }
+
+      if (modalState.kind === "swatch") {
+        modalTitle.textContent = "New Swatch";
+        modalBody.innerHTML = swatchModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
         return;
       }
 
@@ -1536,6 +2156,63 @@ function openObjectModal() {
       ].join("");
     }
 
+    function blendOptionsModalHtml() {
+      const options = state.blendOptions || {};
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Spacing</div>',
+        '<div class="fields three">',
+        '<div class="field"><label>Mode</label><select data-blend-field="spacingMode">' + blendSpacingOptions(options.spacingMode) + '</select></div>',
+        '<div class="field"><label>Steps</label><input type="number" min="1" max="200" data-blend-field="steps" value="' + valueText(options.steps) + '"' + (options.spacingMode === "SPECIFIED_STEPS" ? "" : " disabled") + '></div>',
+        '<div class="field"><label>Distance</label><input type="number" min="1" max="10000" data-blend-field="distance" value="' + valueText(options.distance) + '"' + (options.spacingMode === "SPECIFIED_DISTANCE" ? "" : " disabled") + '></div>',
+        '</div>',
+        '</div>',
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Order</div>',
+        '<label class="check-row"><input type="checkbox" data-blend-field="reverseFrontToBack"' + (options.reverseFrontToBack ? " checked" : "") + '> Reverse front to back</label>',
+        '<label class="check-row"><input type="checkbox" data-blend-field="editEndpoints"' + (options.editEndpoints ? " checked" : "") + '> Show/edit endpoints</label>',
+        '</div>'
+      ].join("");
+    }
+
+    function swatchModalHtml() {
+      const draftLayer = swatchDraftLayer();
+      const paintFieldsHtml = swatchDraft.type === "solid" ? [
+        '<div class="fields three">',
+        '<div class="field"><label>Color</label><input type="color" data-swatch-field="color" value="' + swatchDraft.color + '"></div>',
+        '<div></div>',
+        '<div></div>',
+        '</div>'
+      ].join("") : [
+        '<div class="fields three">',
+        '<div class="field"><label>Gradient</label><select data-swatch-field="paintType">' + enumOptions(swatchDraft.paintType, [
+          ["GRADIENT_LINEAR", "Linear"],
+          ["GRADIENT_RADIAL", "Radial"]
+        ]) + '</select></div>',
+        swatchDraft.paintType === "GRADIENT_LINEAR" ? '<div class="field"><label>Angle</label><input type="number" min="-360" max="360" data-swatch-field="gradientAngle" value="' + swatchDraft.gradientAngle + '"></div>' : '<div></div>',
+        '<div></div>',
+        '</div>',
+        gradientStopEditor(draftLayer)
+      ].join("");
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Paint</div>',
+        '<div class="fields three">',
+        '<div class="field"><label>Type</label><select data-swatch-field="type">' + enumOptions(swatchDraft.type, [
+          ["solid", "Solid"],
+          ["gradient", "Gradient"]
+        ]) + '</select></div>',
+        '<div></div>',
+        '<div></div>',
+        '</div>',
+        paintFieldsHtml,
+        '</div>',
+        '<div class="modal-section">',
+        '<button class="command-btn" id="create-swatch">Save swatch</button>',
+        '</div>'
+      ].join("");
+    }
+
     function bindModalFields() {
       if (modalState.kind === "layer") {
         const layerId = modalState.layerId;
@@ -1549,6 +2226,7 @@ function openObjectModal() {
             return { key: "layer:" + layerId, message: { type: "update-layer", layer: updated, silent: true } };
           });
         });
+        wireGradientStopFields(layerId);
       }
 
       if (modalState.kind === "effect") {
@@ -1588,6 +2266,22 @@ function openObjectModal() {
               printSettings: Object.assign({}, printSettings),
               silent: true
             });
+          };
+        }
+      }
+
+      if (modalState.kind === "blend-options") {
+        wireBlendFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-blend-field]")));
+      }
+
+      if (modalState.kind === "swatch") {
+        wireSwatchDraftFields(Array.prototype.slice.call(modalBody.querySelectorAll("[data-swatch-field]")));
+        wireSwatchGradientFields();
+        const createButton = modalBody.querySelector("#create-swatch");
+        if (createButton) {
+          createButton.onclick = function () {
+            post({ type: "create-swatch", swatch: swatchDraftPayload() });
+            closeModal();
           };
         }
       }
@@ -1787,6 +2481,65 @@ function openObjectModal() {
       });
     }
 
+    function wireBlendFields(inputs) {
+      inputs.forEach(function (input) {
+        input.onfocus = function () {
+          dirtyWhileEditing = false;
+        };
+        input.oninput = function () {
+          const blendOptions = currentBlendOptionsFromControls(inputs);
+          state.blendOptions = Object.assign({}, state.blendOptions || {}, blendOptions);
+          schedule("blend-options", {
+            type: "blend-update-options",
+            blendOptions: blendOptions,
+            silent: true
+          });
+        };
+        input.onchange = function () {
+          const blendOptions = currentBlendOptionsFromControls(inputs);
+          state.blendOptions = Object.assign({}, state.blendOptions || {}, blendOptions);
+          flush("blend-options", {
+            type: "blend-update-options",
+            blendOptions: blendOptions,
+            silent: true
+          });
+          if (input.dataset.blendField === "spacingMode") {
+            setTimeout(renderModal, 0);
+          }
+          if (input.dataset.blendField === "editEndpoints" || input.dataset.blendField === "reverseFrontToBack") {
+            setTimeout(render, 0);
+          }
+        };
+        input.onblur = function () {
+          const blendOptions = currentBlendOptionsFromControls(inputs);
+          state.blendOptions = Object.assign({}, state.blendOptions || {}, blendOptions);
+          flush("blend-options", {
+            type: "blend-update-options",
+            blendOptions: blendOptions,
+            silent: true
+          });
+          setTimeout(function () {
+            if (dirtyWhileEditing || !isFieldEditing()) render();
+          }, 0);
+        };
+      });
+    }
+
+    function currentBlendOptionsFromControls(inputs) {
+      const options = Object.assign({}, state.blendOptions || {});
+      inputs.forEach(function (input) {
+        const key = input.dataset.blendField;
+        if (input.type === "checkbox") {
+          options[key] = input.checked;
+        } else if (input.type === "number") {
+          options[key] = input.value === "" ? 0 : Number(input.value);
+        } else {
+          options[key] = input.value;
+        }
+      });
+      return options;
+    }
+
     function currentTextPropertiesFromControls(inputs) {
       const properties = {};
       inputs.forEach(function (input) {
@@ -1868,7 +2621,7 @@ function wireField(input, buildUpdate) {
 
     function isFieldEditing() {
       const active = document.activeElement;
-      return Boolean(active && (active.hasAttribute("data-field") || active.hasAttribute("data-effect-field") || active.hasAttribute("data-text-field") || active.hasAttribute("data-text-style-field") || active.hasAttribute("data-global-field") || active.hasAttribute("data-object-field")));
+      return Boolean(active && (active.hasAttribute("data-field") || active.hasAttribute("data-effect-field") || active.hasAttribute("data-gradient-field") || active.hasAttribute("data-text-field") || active.hasAttribute("data-text-style-field") || active.hasAttribute("data-global-field") || active.hasAttribute("data-object-field") || active.hasAttribute("data-blend-field")));
     }
 
     function ensureExpandedDefaults() {
@@ -1894,6 +2647,320 @@ function wireField(input, buildUpdate) {
     function updateLocalLayer(updated) {
       state.stack = state.stack.map(function (layer) {
         return layer.id === updated.id ? updated : layer;
+      });
+    }
+
+    function wireGradientStopFields(layerId) {
+      modalBody.querySelectorAll("[data-gradient-field]").forEach(function (input) {
+        input.onfocus = function () {
+          dirtyWhileEditing = false;
+        };
+        input.oninput = function () {
+          updateGradientStopFromInput(layerId, input, true);
+        };
+        input.onchange = function () {
+          updateGradientStopFromInput(layerId, input, false);
+        };
+        input.onblur = function () {
+          updateGradientStopFromInput(layerId, input, false);
+          setTimeout(function () {
+            if (dirtyWhileEditing || !isFieldEditing()) render();
+          }, 0);
+        };
+      });
+
+      modalBody.querySelectorAll("[data-gradient-remove]").forEach(function (button) {
+        button.onclick = function () {
+          const layer = findLayer(layerId);
+          if (!layer) return;
+          const stops = normalizedUiGradientStops(layer);
+          if (stops.length <= 2) return;
+          const updatedStops = stops.filter(function (stop) {
+            return stop.id !== button.dataset.gradientRemove;
+          });
+          updateGradientLayer(layer, updatedStops, false);
+          render();
+        };
+      });
+
+      modalBody.querySelectorAll("[data-gradient-ramp]").forEach(function (ramp) {
+        ramp.onclick = function (event) {
+          if (gradientDrag && gradientDrag.didDrag) return;
+          if (event.target && event.target.hasAttribute("data-gradient-stop")) return;
+          const rect = ramp.getBoundingClientRect();
+          const position = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
+          const layer = findLayer(layerId);
+          if (!layer) return;
+          const stops = normalizedUiGradientStops(layer);
+          const color = gradientColorAtUi(stops, position);
+          stops.push({ id: createUiId(), position: Math.round(position), color: color });
+          updateGradientLayer(layer, stops, false);
+          render();
+        };
+      });
+
+      modalBody.querySelectorAll(".gradient-stop").forEach(function (handle) {
+        handle.onmousedown = function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          const ramp = handle.closest("[data-gradient-ramp]");
+          if (!ramp) return;
+          gradientDrag = {
+            layerId: layerId,
+            stopId: handle.dataset.gradientStop,
+            ramp: ramp,
+            didDrag: false
+          };
+          document.addEventListener("mousemove", onGradientStopDragMove);
+          document.addEventListener("mouseup", onGradientStopDragEnd);
+        };
+      });
+    }
+
+    function wireSwatchDraftFields(inputs) {
+      inputs.forEach(function (input) {
+        input.oninput = function () {
+          updateSwatchDraftField(input);
+        };
+        input.onchange = function () {
+          updateSwatchDraftField(input);
+          if (input.dataset.swatchField === "type" || input.dataset.swatchField === "paintType") {
+            setTimeout(renderModal, 0);
+          }
+        };
+      });
+    }
+
+    function updateSwatchDraftField(input) {
+      const field = input.dataset.swatchField;
+      if (field === "gradientAngle") {
+        swatchDraft.gradientAngle = input.value === "" ? 0 : Number(input.value);
+      } else {
+        swatchDraft[field] = input.value;
+      }
+      refreshSwatchDraftRamp();
+    }
+
+    function wireSwatchGradientFields() {
+      modalBody.querySelectorAll('[data-gradient-ramp="swatch_draft"]').forEach(function (ramp) {
+        ramp.onclick = function (event) {
+          if (gradientDrag && gradientDrag.didDrag) return;
+          if (event.target && event.target.hasAttribute("data-gradient-stop")) return;
+          const rect = ramp.getBoundingClientRect();
+          const position = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
+          const stops = normalizedUiGradientStops(swatchDraftLayer());
+          const color = gradientColorAtUi(stops, position);
+          swatchDraft.gradientStops = stops.concat([{ id: createUiId(), position: Math.round(position), color: color }]);
+          renderModal();
+        };
+      });
+
+      modalBody.querySelectorAll('[data-gradient-ramp="swatch_draft"] .gradient-stop').forEach(function (handle) {
+        handle.onmousedown = function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          const ramp = handle.closest("[data-gradient-ramp]");
+          if (!ramp) return;
+          gradientDrag = {
+            layerId: "swatch_draft",
+            stopId: handle.dataset.gradientStop,
+            ramp: ramp,
+            didDrag: false
+          };
+          document.addEventListener("mousemove", onSwatchGradientDragMove);
+          document.addEventListener("mouseup", onSwatchGradientDragEnd);
+        };
+      });
+
+      modalBody.querySelectorAll('[data-gradient-ramp="swatch_draft"] [data-gradient-stop]').forEach(function (_handle) {});
+
+      modalBody.querySelectorAll('[data-gradient-field]').forEach(function (input) {
+        input.oninput = function () {
+          updateSwatchGradientStopFromInput(input);
+        };
+        input.onchange = function () {
+          updateSwatchGradientStopFromInput(input);
+        };
+      });
+
+      modalBody.querySelectorAll('[data-gradient-remove]').forEach(function (button) {
+        button.onclick = function () {
+          const stops = normalizedUiGradientStops(swatchDraftLayer());
+          if (stops.length <= 2) return;
+          swatchDraft.gradientStops = stops.filter(function (stop) {
+            return stop.id !== button.dataset.gradientRemove;
+          });
+          renderModal();
+        };
+      });
+    }
+
+    function onSwatchGradientDragMove(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      gradientDrag.didDrag = true;
+      moveSwatchGradientStopToClientX(gradientDrag.stopId, gradientDrag.ramp, event.clientX);
+    }
+
+    function onSwatchGradientDragEnd(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      moveSwatchGradientStopToClientX(gradientDrag.stopId, gradientDrag.ramp, event.clientX);
+      document.removeEventListener("mousemove", onSwatchGradientDragMove);
+      document.removeEventListener("mouseup", onSwatchGradientDragEnd);
+      setTimeout(function () {
+        gradientDrag = null;
+      }, 0);
+    }
+
+    function moveSwatchGradientStopToClientX(stopId, ramp, clientX) {
+      const rect = ramp.getBoundingClientRect();
+      const position = rect.width <= 0 ? 0 : Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100));
+      const rounded = Math.round(position);
+      swatchDraft.gradientStops = normalizedUiGradientStops(swatchDraftLayer()).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        return Object.assign({}, stop, { position: rounded });
+      });
+      refreshSwatchDraftRamp();
+      const input = modalBody.querySelector('[data-gradient-stop="' + stopId + '"][data-gradient-field="position"]');
+      if (input) input.value = String(rounded);
+    }
+
+    function updateSwatchGradientStopFromInput(input) {
+      const stopId = input.dataset.gradientStop;
+      const field = input.dataset.gradientField;
+      swatchDraft.gradientStops = normalizedUiGradientStops(swatchDraftLayer()).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        const updated = Object.assign({}, stop);
+        if (field === "position") updated.position = Math.max(0, Math.min(100, input.value === "" ? 0 : Number(input.value)));
+        if (field === "color") updated.color = input.value;
+        return updated;
+      });
+      refreshSwatchDraftRamp();
+    }
+
+    function refreshSwatchDraftRamp() {
+      const ramp = modalBody.querySelector('[data-gradient-ramp="swatch_draft"]');
+      if (!ramp) return;
+      const layer = swatchDraftLayer();
+      const stops = normalizedUiGradientStops(layer);
+      ramp.setAttribute("style", gradientRampStyle(layer, stops));
+      stops.forEach(function (stop) {
+        const handle = ramp.querySelector('[data-gradient-stop="' + stop.id + '"]');
+        if (handle) {
+          handle.style.left = stop.position + "%";
+          handle.style.background = stop.color;
+          handle.title = stop.position + "%";
+        }
+      });
+    }
+
+    function swatchDraftLayer() {
+      return {
+        id: "swatch_draft",
+        paintType: swatchDraft.paintType,
+        gradientAngle: swatchDraft.gradientAngle,
+        gradientStops: swatchDraft.gradientStops,
+        gradientStart: swatchDraft.gradientStops[0] ? swatchDraft.gradientStops[0].color : "#4F8DFF",
+        gradientEnd: swatchDraft.gradientStops[swatchDraft.gradientStops.length - 1] ? swatchDraft.gradientStops[swatchDraft.gradientStops.length - 1].color : "#B96BFF"
+      };
+    }
+
+    function swatchDraftPayload() {
+      if (swatchDraft.type === "gradient") {
+        const stops = normalizedUiGradientStops(swatchDraftLayer());
+        return {
+          type: "gradient",
+          paintType: swatchDraft.paintType,
+          gradientAngle: swatchDraft.gradientAngle,
+          gradientStart: stops[0].color,
+          gradientEnd: stops[stops.length - 1].color,
+          gradientStops: stops
+        };
+      }
+      return {
+        type: "solid",
+        color: swatchDraft.color
+      };
+    }
+
+    function onGradientStopDragMove(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      gradientDrag.didDrag = true;
+      moveGradientStopToClientX(gradientDrag.layerId, gradientDrag.stopId, gradientDrag.ramp, event.clientX, true);
+    }
+
+    function onGradientStopDragEnd(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      moveGradientStopToClientX(gradientDrag.layerId, gradientDrag.stopId, gradientDrag.ramp, event.clientX, false);
+      document.removeEventListener("mousemove", onGradientStopDragMove);
+      document.removeEventListener("mouseup", onGradientStopDragEnd);
+      setTimeout(function () {
+        gradientDrag = null;
+      }, 0);
+    }
+
+    function moveGradientStopToClientX(layerId, stopId, ramp, clientX, scheduled) {
+      const layer = findLayer(layerId);
+      if (!layer) return;
+      const rect = ramp.getBoundingClientRect();
+      const position = rect.width <= 0 ? 0 : Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100));
+      const rounded = Math.round(position);
+      const stops = normalizedUiGradientStops(layer).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        return Object.assign({}, stop, { position: rounded });
+      });
+      updateGradientLayer(layer, stops, scheduled);
+      const input = modalBody.querySelector('[data-gradient-stop="' + stopId + '"][data-gradient-field="position"]');
+      if (input) input.value = String(rounded);
+    }
+
+    function updateGradientStopFromInput(layerId, input, scheduled) {
+      const layer = findLayer(layerId);
+      if (!layer) return;
+      const stopId = input.dataset.gradientStop;
+      const field = input.dataset.gradientField;
+      const stops = normalizedUiGradientStops(layer).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        const updated = Object.assign({}, stop);
+        if (field === "position") updated.position = Math.max(0, Math.min(100, input.value === "" ? 0 : Number(input.value)));
+        if (field === "color") updated.color = input.value;
+        return updated;
+      });
+      updateGradientLayer(layer, stops, scheduled);
+    }
+
+    function updateGradientLayer(layer, stops, scheduled) {
+      const normalized = normalizedUiGradientStops(Object.assign({}, layer, { gradientStops: stops }));
+      const updated = Object.assign({}, layer, {
+        gradientStops: normalized,
+        gradientStart: normalized[0].color,
+        gradientEnd: normalized[normalized.length - 1].color
+      });
+      updateLocalLayer(updated);
+      refreshGradientEditor(updated);
+      const message = { type: "update-layer", layer: updated, silent: true };
+      if (scheduled) {
+        schedule("layer:" + layer.id, message);
+      } else {
+        flush("layer:" + layer.id, message);
+      }
+    }
+
+    function refreshGradientEditor(layer) {
+      const ramp = modalBody.querySelector('[data-gradient-ramp="' + layer.id + '"]');
+      if (!ramp) return;
+      const stops = normalizedUiGradientStops(layer);
+      ramp.setAttribute("style", gradientRampStyle(layer, stops));
+      stops.forEach(function (stop) {
+        const handle = ramp.querySelector('[data-gradient-stop="' + stop.id + '"]');
+        if (handle) {
+          handle.style.left = stop.position + "%";
+          handle.style.background = stop.color;
+          handle.title = stop.position + "%";
+        }
       });
     }
 
@@ -1954,6 +3021,14 @@ function wireField(input, buildUpdate) {
         ["SOLID", "Solid"],
         ["GRADIENT_LINEAR", "Linear gradient"],
         ["GRADIENT_RADIAL", "Radial gradient"]
+      ]);
+    }
+
+    function blendSpacingOptions(value) {
+      return enumOptions(value || "SPECIFIED_STEPS", [
+        ["SPECIFIED_STEPS", "Specified steps"],
+        ["SPECIFIED_DISTANCE", "Specified distance"],
+        ["SMOOTH_COLOR", "Smooth color"]
       ]);
     }
 
@@ -2033,8 +3108,9 @@ function wireField(input, buildUpdate) {
     function isBrightPrintRisk(layer) {
       const colors = [];
       if (layer.color) colors.push(layer.color);
-      if (layer.gradientStart) colors.push(layer.gradientStart);
-      if (layer.gradientEnd) colors.push(layer.gradientEnd);
+      normalizedUiGradientStops(layer).forEach(function (stop) {
+        colors.push(stop.color);
+      });
       return colors.some(function (hex) {
         const rgb = parseHexColor(hex);
         const max = Math.max(rgb[0], rgb[1], rgb[2]);
@@ -2117,11 +3193,107 @@ function wireField(input, buildUpdate) {
 
     function swatchStyle(layer) {
       if (layer.paintType === "GRADIENT_LINEAR" || layer.paintType === "GRADIENT_RADIAL") {
-        const cssAngle = 90 + (Number(layer.gradientAngle) || 0);
-        const gradient = layer.paintType === "GRADIENT_RADIAL" ? "radial-gradient(circle, " : "linear-gradient(" + cssAngle + "deg, ";
-        return "background:" + gradient + layer.gradientStart + ", " + layer.gradientEnd + ");";
+        return gradientRampStyle(layer, normalizedUiGradientStops(layer));
       }
       return "background:" + layer.color + ";";
+    }
+
+    function swatchStyleFromSwatch(swatch) {
+      if (!swatch) return "background:#4F8DFF;";
+      if (swatch.type === "gradient") {
+        return gradientRampStyle({
+          paintType: swatch.paintType,
+          gradientAngle: swatch.gradientAngle,
+          gradientStops: swatch.gradientStops,
+          gradientStart: swatch.gradientStart,
+          gradientEnd: swatch.gradientEnd
+        }, normalizedUiGradientStops(swatch));
+      }
+      if (swatch.type === "pattern") {
+        return "background:repeating-linear-gradient(45deg, #555 0 6px, #222 6px 12px);";
+      }
+      return "background:" + (swatch.color || "#4F8DFF") + ";";
+    }
+
+    function swatchLabel(swatch) {
+      if (!swatch) return "Swatch";
+      if (swatch.type === "gradient") return swatch.paintType === "GRADIENT_RADIAL" ? "Radial" : "Linear";
+      if (swatch.type === "pattern") return "Pattern";
+      return swatch.color || "Color";
+    }
+
+    function normalizedUiGradientStops(layer) {
+      const fallbackStart = layer.gradientStart || layer.color || "#4F8DFF";
+      const fallbackEnd = layer.gradientEnd || "#B96BFF";
+      const source = Array.isArray(layer.gradientStops) && layer.gradientStops.length ? layer.gradientStops : [
+        { id: createUiId(), position: 0, color: fallbackStart },
+        { id: createUiId(), position: 100, color: fallbackEnd }
+      ];
+      const stops = source.map(function (stop, index) {
+        return {
+          id: stop.id || createUiId(),
+          position: Math.max(0, Math.min(100, Number(stop.position) || (index === 0 ? 0 : 100))),
+          color: stop.color || fallbackStart
+        };
+      });
+      stops.sort(function (a, b) {
+        return a.position - b.position;
+      });
+      if (stops.length === 1) {
+        stops.push({ id: createUiId(), position: 100, color: stops[0].color });
+      }
+      return stops;
+    }
+
+    function gradientRampStyle(layer, stops) {
+      const sorted = stops || normalizedUiGradientStops(layer);
+      const stopText = sorted.map(function (stop) {
+        return stop.color + " " + stop.position + "%";
+      }).join(", ");
+      if (layer.paintType === "GRADIENT_RADIAL") return "background:radial-gradient(circle, " + stopText + ");";
+      const cssAngle = 90 + (Number(layer.gradientAngle) || 0);
+      return "background:linear-gradient(" + cssAngle + "deg, " + stopText + ");";
+    }
+
+    function gradientColorAtUi(stops, position) {
+      const sorted = stops.slice().sort(function (a, b) {
+        return a.position - b.position;
+      });
+      if (!sorted.length) return "#4F8DFF";
+      if (position <= sorted[0].position) return sorted[0].color;
+      const last = sorted[sorted.length - 1];
+      if (position >= last.position) return last.color;
+      for (let index = 1; index < sorted.length; index++) {
+        const before = sorted[index - 1];
+        const after = sorted[index];
+        if (position <= after.position) {
+          const span = after.position - before.position;
+          const local = span <= 0 ? 0 : (position - before.position) / span;
+          return mixHexColor(before.color, after.color, local);
+        }
+      }
+      return last.color;
+    }
+
+    function mixHexColor(a, b, t) {
+      const ca = parseHexColor(a);
+      const cb = parseHexColor(b);
+      return rgbToHexUi(
+        Math.round(ca[0] + (cb[0] - ca[0]) * t),
+        Math.round(ca[1] + (cb[1] - ca[1]) * t),
+        Math.round(ca[2] + (cb[2] - ca[2]) * t)
+      );
+    }
+
+    function rgbToHexUi(r, g, b) {
+      return "#" + [r, g, b].map(function (value) {
+        const hex = Math.max(0, Math.min(255, value)).toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+      }).join("");
+    }
+
+    function createUiId() {
+      return "ui_" + Math.random().toString(36).slice(2, 10);
     }
 
     function post(message) {

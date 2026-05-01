@@ -146,32 +146,63 @@ function applyLayerEffects(node, layer) {
 }
 
 function applyGeometryPipelineEffects(node, layer) {
+  const warpEffect = firstVisibleEffect(layer, "warp");
+  if (warpEffect) {
+    const warped = applyWarpEffect(node, layer, warpEffect);
+    if (warped) node = warped;
+  }
+
   const offsetEffect = firstVisibleEffect(layer, "offsetPath");
-  if (offsetEffect) applyOffsetPathEffect(node, layer, offsetEffect);
+  if (offsetEffect) {
+    const offsetNode = applyOffsetPathEffect(node, layer, offsetEffect);
+    if (offsetNode) node = offsetNode;
+  }
 
   const roundEffect = firstVisibleEffect(layer, "roundCorners");
   if (roundEffect && "cornerRadius" in node) {
     node.cornerRadius = roundEffect.radius;
   }
+
+  return node;
 }
 
 function applyOffsetPathEffect(node, layer, effect) {
   const amount = Number(effect.amount) || 0;
-  if (amount === 0) return;
-
-  if (node.type === "TEXT" && amount < 0) return;
+  if (amount === 0) return node;
 
   if (layer.type === "fill" && amount > 0 && "strokes" in node) {
+    // Positive offset on fill: expand via outside stroke
     const paint = node.fills && node.fills.length ? clonePaint(node.fills[0]) : layerPaint(layer);
     node.strokes = [paint];
-    if ("strokeWeight" in node) node.strokeWeight = Math.abs(amount) * 2;
+    if ("strokeWeight" in node) node.strokeWeight = amount * 2;
     if ("strokeAlign" in node) node.strokeAlign = "OUTSIDE";
     applyOffsetJoinStyle(node, effect);
-    return;
+    return node;
+  }
+
+  if (amount < 0) {
+    // Negative offset: shrink width/height
+    resizeNodeByOffset(node, amount);
+    // Simulate join style via cornerRadius
+    if ("cornerRadius" in node && typeof node.cornerRadius === "number") {
+      const absAmount = Math.abs(amount);
+      if (effect.joinStyle === "ROUND") {
+        // Round: set cornerRadius to |amount| to create natural inward rounding
+        node.cornerRadius = absAmount;
+      } else if (effect.joinStyle === "BEVEL") {
+        // Bevel: approximate with a small cornerRadius (less than amount)
+        node.cornerRadius = Math.round(absAmount * 0.4);
+      } else {
+        // MITER (default): keep existing cornerRadius, reduced by inset amount
+        node.cornerRadius = Math.max(0, node.cornerRadius + amount);
+      }
+    }
+    return node;
   }
 
   resizeNodeByOffset(node, amount);
   applyOffsetJoinStyle(node, effect);
+  return node;
 }
 
 function applyOffsetJoinStyle(node, effect) {
@@ -203,13 +234,13 @@ function appendRasterEffectOverlays(group, base, layer, transform) {
   if (!rasterEffects.length) return;
 
   for (const effect of rasterEffects) {
-    const overlay = createLayerRenderNode(base, layer);
+    let overlay = createLayerRenderNode(base, layer);
     overlay.name = `${layer.name} ${effect.name}`;
     overlay.visible = true;
     overlay.locked = false;
     overlay.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_RENDER);
     applyRasterOverlayAppearance(overlay, layer, effect);
-    applyGeometryPipelineEffects(overlay, layer);
+    overlay = applyGeometryPipelineEffects(overlay, layer);
     applyTransformInstance(overlay, transform);
     group.appendChild(overlay);
   }

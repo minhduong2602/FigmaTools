@@ -2,15 +2,23 @@ const DATA_NAMESPACE = "appearance_stack";
 const DATA_KIND = "kind";
 const DATA_STACK = "stack";
 const DATA_GLOBAL = "global";
+const DATA_BLEND = "blend";
+const DATA_BLEND_ROLE = "blend_role";
 const KIND_GROUP = "group";
 const KIND_BASE = "base";
 const KIND_RENDER = "render";
+const KIND_BLEND_GROUP = "blend_group";
+const KIND_BLEND_BASE = "blend_base";
+const KIND_BLEND_RENDER = "blend_render";
+const BLEND_ROLE_START = "start";
+const BLEND_ROLE_END = "end";
 
 const DEFAULT_FILL = "#4F8DFF";
 const DEFAULT_STROKE = "#111111";
 const DEFAULT_GRADIENT_END = "#B96BFF";
 const DEFAULT_SHADOW = "#000000";
 const STYLE_CLIPBOARD_KEY = "appearance_stack_clipboard";
+const SWATCH_STORAGE_KEY = "appearance_stack_swatches";
 const BLEND_MODES = [
   "NORMAL",
   "MULTIPLY",
@@ -35,6 +43,9 @@ const STROKE_ALIGNS = ["CENTER", "INSIDE", "OUTSIDE"];
 const PAINT_TYPES = ["SOLID", "GRADIENT_LINEAR", "GRADIENT_RADIAL"];
 const SHAPE_EFFECT_TYPES = ["RECTANGLE", "ROUNDED_RECTANGLE", "ELLIPSE"];
 const OFFSET_JOINS = ["MITER", "ROUND", "BEVEL"];
+const WARP_STYLES = ["ARC", "ARC_LOWER", "ARC_UPPER", "FLAG", "RISE"];
+const WARP_AXES = ["HORIZONTAL", "VERTICAL"];
+const BLEND_SPACING_MODES = ["SPECIFIED_STEPS", "SPECIFIED_DISTANCE", "SMOOTH_COLOR"];
 
 function getSelection() {
   return figma.currentPage.selection.filter((node) => "clone" in node);
@@ -202,13 +213,13 @@ async function renderAppearance(group, stack) {
     if (!layer.visible) continue;
     const transforms = getTransformInstances(layer);
     for (const transform of transforms) {
-      const render = createLayerRenderNode(base, layer);
+      let render = createLayerRenderNode(base, layer);
       render.name = transform.label ? `${layer.name} ${transform.label}` : layer.name;
       render.visible = true;
       render.locked = false;
       render.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_RENDER);
       applyLayerAppearance(render, layer, base);
-      applyGeometryPipelineEffects(render, layer);
+      render = applyGeometryPipelineEffects(render, layer);
       applyTransformInstance(render, transform);
       group.appendChild(render);
       appendRasterEffectOverlays(group, base, layer, transform);
@@ -404,6 +415,1072 @@ function roundForUi(value) {
   return Math.round(number * 100) / 100;
 }
 
+function getActiveBlendGroup() {
+  const selection = figma.currentPage.selection;
+  if (selection.length !== 1) return null;
+  const node = selection[0];
+  if (isBlendGroup(node)) return node;
+  let parent = node.parent;
+  while (parent && parent.type !== "PAGE") {
+    if (isBlendGroup(parent)) return parent;
+    parent = parent.parent;
+  }
+  return null;
+}
+
+function isBlendGroup(node) {
+  return (node.type === "GROUP" || node.type === "FRAME") && node.getSharedPluginData(DATA_NAMESPACE, DATA_KIND) === KIND_BLEND_GROUP;
+}
+
+function notifySelectBlend() {
+  figma.notify("Select a Blend group first.");
+}
+
+function createBlendOptions(options) {
+  return normalizeBlendOptions(options || {
+    spacingMode: "SPECIFIED_STEPS",
+    steps: 8,
+    distance: 24,
+    reverseFrontToBack: false,
+    editEndpoints: false
+  });
+}
+
+function normalizeBlendOptions(options) {
+  const source = options || {};
+  return {
+    spacingMode: normalizeBlendSpacingMode(source.spacingMode),
+    steps: Math.round(clampNumber(source.steps, 1, 200, 8)),
+    distance: clampNumber(source.distance, 1, 10000, 24),
+    reverseFrontToBack: source.reverseFrontToBack === true,
+    editEndpoints: source.editEndpoints === true
+  };
+}
+
+function readBlendOptions(group) {
+  const raw = group.getSharedPluginData(DATA_NAMESPACE, DATA_BLEND);
+  if (!raw) return createBlendOptions();
+  try {
+    return normalizeBlendOptions(JSON.parse(raw));
+  } catch (_error) {
+    return createBlendOptions();
+  }
+}
+
+function writeBlendOptions(group, options) {
+  group.setSharedPluginData(DATA_NAMESPACE, DATA_BLEND, JSON.stringify(normalizeBlendOptions(options)));
+}
+
+async function makeBlend() {
+  const selection = getSelection();
+  if (selection.length !== 2) {
+    figma.notify("Select exactly two objects to make a blend.");
+    return;
+  }
+
+  const start = selection[0];
+  const end = selection[1];
+  if (!start.parent || start.parent !== end.parent || start.parent.type === "DOCUMENT") {
+    figma.notify("Blend needs two objects in the same parent.");
+    return;
+  }
+  if (!("width" in start) || !("height" in start) || !("width" in end) || !("height" in end)) {
+    figma.notify("Blend needs objects with visible dimensions.");
+    return;
+  }
+
+  const parent = start.parent;
+  const originalName = start.name + " Blend";
+  const frame = createBlendFrame(start, end, parent, originalName);
+  const startX = start.x;
+  const startY = start.y;
+  const endX = end.x;
+  const endY = end.y;
+  start.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_BLEND_BASE);
+  start.setSharedPluginData(DATA_NAMESPACE, DATA_BLEND_ROLE, BLEND_ROLE_START);
+  end.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_BLEND_BASE);
+  end.setSharedPluginData(DATA_NAMESPACE, DATA_BLEND_ROLE, BLEND_ROLE_END);
+  frame.appendChild(start);
+  frame.appendChild(end);
+  start.x = startX - frame.x;
+  start.y = startY - frame.y;
+  end.x = endX - frame.x;
+  end.y = endY - frame.y;
+  start.visible = false;
+  end.visible = false;
+  const options = createBlendOptions();
+  writeBlendOptions(frame, options);
+  await renderBlend(frame, options);
+  figma.currentPage.selection = [frame];
+  figma.notify("Blend created.");
+}
+
+function createBlendFrame(start, end, parent, name) {
+  const bounds = blendBounds(start, end);
+  const frame = figma.createFrame();
+  const startIndex = getChildIndex(parent, start);
+  const endIndex = getChildIndex(parent, end);
+  const index = Math.min(startIndex >= 0 ? startIndex : parent.children.length, endIndex >= 0 ? endIndex : parent.children.length);
+  frame.name = name;
+  frame.x = bounds.x;
+  frame.y = bounds.y;
+  frame.resizeWithoutConstraints(Math.max(0.01, bounds.width), Math.max(0.01, bounds.height));
+  frame.clipsContent = false;
+  frame.fills = [];
+  frame.strokes = [];
+  frame.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_BLEND_GROUP);
+  parent.insertChild(index >= 0 ? index : parent.children.length, frame);
+  return frame;
+}
+
+function blendBounds(start, end) {
+  const x1 = Math.min(start.x, end.x);
+  const y1 = Math.min(start.y, end.y);
+  const x2 = Math.max(start.x + start.width, end.x + end.width);
+  const y2 = Math.max(start.y + start.height, end.y + end.height);
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+}
+
+async function renderBlend(group, options) {
+  const endpoints = getBlendEndpoints(group);
+  if (!endpoints.start || !endpoints.end) throw new Error("Blend is missing one endpoint.");
+
+  const normalized = normalizeBlendOptions(options);
+  clearBlendRenders(group);
+  endpoints.start.visible = normalized.editEndpoints;
+  endpoints.end.visible = normalized.editEndpoints;
+  endpoints.start.locked = false;
+  endpoints.end.locked = false;
+
+  const steps = resolvedBlendSteps(normalized, endpoints.start, endpoints.end);
+  const total = steps + 2;
+  const renders = [];
+  const firstIndex = normalized.editEndpoints ? 1 : 0;
+  const lastIndex = normalized.editEndpoints ? total - 2 : total - 1;
+  for (let index = firstIndex; index <= lastIndex; index++) {
+    const t = total <= 1 ? 0 : index / (total - 1);
+    const render = createBlendRenderNode(endpoints.start, endpoints.end, t, group);
+    render.name = "Blend " + String(index + 1).padStart(2, "0");
+    render.visible = true;
+    render.locked = false;
+    render.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_BLEND_RENDER);
+    renders.push(render);
+  }
+
+  if (normalized.reverseFrontToBack) renders.reverse();
+  for (let index = 0; index < renders.length; index++) {
+    group.appendChild(renders[index]);
+  }
+  writeBlendOptions(group, normalized);
+}
+
+function clearBlendRenders(group) {
+  for (const child of group.children.slice()) {
+    if (child.getSharedPluginData(DATA_NAMESPACE, DATA_KIND) === KIND_BLEND_RENDER) {
+      child.remove();
+    }
+  }
+}
+
+function getBlendEndpoints(group) {
+  const result = { start: null, end: null };
+  for (const child of group.children) {
+    if (child.getSharedPluginData(DATA_NAMESPACE, DATA_KIND) !== KIND_BLEND_BASE) continue;
+    const role = child.getSharedPluginData(DATA_NAMESPACE, DATA_BLEND_ROLE);
+    if (role === BLEND_ROLE_START) result.start = child;
+    if (role === BLEND_ROLE_END) result.end = child;
+  }
+  return result;
+}
+
+function resolvedBlendSteps(options, start, end) {
+  if (options.spacingMode === "SMOOTH_COLOR") return 24;
+  if (options.spacingMode === "SPECIFIED_DISTANCE") {
+    const dx = centerX(end) - centerX(start);
+    const dy = centerY(end) - centerY(start);
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    return Math.max(1, Math.min(200, Math.ceil(distance / options.distance) - 1));
+  }
+  return options.steps;
+}
+
+function createBlendRenderNode(start, end, t, group) {
+  if (t > 0 && t < 1) {
+    const morphed = createMorphedBlendPath(start, end, t, group);
+    if (morphed) return morphed;
+  }
+  const source = t >= 1 ? end : start;
+  const render = source.clone();
+  applyBlendInterpolation(render, start, end, t);
+  return render;
+}
+
+function applyBlendInterpolation(node, start, end, t) {
+  if ("x" in node) node.x = lerp(start.x, end.x, t);
+  if ("y" in node) node.y = lerp(start.y, end.y, t);
+  if ("resize" in node && "width" in node && "height" in node) {
+    try {
+      node.resize(Math.max(0.01, lerp(start.width, end.width, t)), Math.max(0.01, lerp(start.height, end.height, t)));
+    } catch (_resizeError) {}
+  }
+  if ("rotation" in node && "rotation" in start && "rotation" in end) node.rotation = lerp(start.rotation, end.rotation, t);
+  if ("opacity" in node && "opacity" in start && "opacity" in end) node.opacity = lerp(start.opacity, end.opacity, t);
+  if ("blendMode" in node && "blendMode" in start && "blendMode" in end) node.blendMode = t < 0.5 ? start.blendMode : end.blendMode;
+  interpolateNodePaints(node, start, end, t);
+  interpolateStrokeWeight(node, start, end, t);
+}
+
+function createMorphedBlendPath(start, end, t, group) {
+  const startPath = sampleBlendPath(start, group);
+  const endPath = sampleBlendPath(end, group);
+  if (!startPath || !endPath) return null;
+
+  const count = Math.max(16, Math.min(192, Math.max(startPath.points.length, endPath.points.length)));
+  const startPoints = resampleBlendPoints(startPath.points, count, startPath.closed);
+  let endPoints = resampleBlendPoints(endPath.points, count, endPath.closed);
+  if (!startPoints.length || !endPoints.length || startPoints.length !== endPoints.length) return null;
+  endPoints = alignBlendPointOrder(startPoints, endPoints, startPath.closed && endPath.closed);
+
+  const points = [];
+  for (let index = 0; index < startPoints.length; index++) {
+    points.push({
+      x: lerp(startPoints[index].x, endPoints[index].x, t),
+      y: lerp(startPoints[index].y, endPoints[index].y, t)
+    });
+  }
+
+  const closed = startPath.closed && endPath.closed;
+  const bounds = blendPointBounds(points);
+  const localPoints = translateBlendPoints(points, -bounds.x, -bounds.y);
+  const pathData = blendPointsToPath(localPoints, closed);
+  if (!pathData) return null;
+
+  const vector = figma.createVector();
+  vector.x = bounds.x;
+  vector.y = bounds.y;
+  try {
+    vector.vectorPaths = [{ windingRule: "NONZERO", data: pathData }];
+  } catch (_error) {
+    vector.remove();
+    return null;
+  }
+  applyBlendPathStyle(vector, start, end, t);
+  return vector;
+}
+
+function sampleBlendPath(node, group) {
+  if (!("width" in node) || !("height" in node)) return null;
+  const toGroup = blendNodeToGroupTransform(node, group);
+
+  try {
+    if (Array.isArray(node.vectorPaths) && node.vectorPaths.length > 0 && node.vectorPaths[0].data) {
+      return {
+        points: transformBlendPoints(blendPathPoints(sampleSvgPath(node.vectorPaths[0].data, 24)), toGroup),
+        closed: /[Zz]\s*$/.test(node.vectorPaths[0].data)
+      };
+    }
+  } catch (_vectorPathError) {}
+
+  try {
+    const strokeGeometry = node.strokeGeometry;
+    if (strokeGeometry && strokeGeometry.length > 0 && strokeGeometry[0].data) {
+      return {
+        points: transformBlendPoints(blendPathPoints(sampleSvgPath(strokeGeometry[0].data, 16)), toGroup),
+        closed: /[Zz]\s*$/.test(strokeGeometry[0].data)
+      };
+    }
+  } catch (_strokeGeometryError) {}
+
+  try {
+    const fillGeometry = node.fillGeometry;
+    if (fillGeometry && fillGeometry.length > 0 && fillGeometry[0].data) {
+      return {
+        points: transformBlendPoints(blendPathPoints(sampleSvgPath(fillGeometry[0].data, 16)), toGroup),
+        closed: /[Zz]\s*$/.test(fillGeometry[0].data)
+      };
+    }
+  } catch (_fillGeometryError) {}
+
+  return {
+    points: transformBlendPoints(blendPathPoints(sampleRectOutline(node.width, node.height, blendCornerRadius(node), 24)), toGroup),
+    closed: true
+  };
+}
+
+function blendPathPoints(sampled) {
+  const points = [];
+  for (let index = 0; index < sampled.length; index++) {
+    const point = sampled[index];
+    if (point.type === "M" || point.type === "L") points.push({ x: point.x, y: point.y });
+  }
+  return points;
+}
+
+function blendCornerRadius(node) {
+  if ("cornerRadius" in node && typeof node.cornerRadius === "number") {
+    return Math.min(node.cornerRadius, node.width / 2, node.height / 2);
+  }
+  return 0;
+}
+
+function resampleBlendPoints(points, count, closed) {
+  if (!points.length || count <= 0) return [];
+  if (points.length === 1) {
+    const repeated = [];
+    for (let index = 0; index < count; index++) repeated.push({ x: points[0].x, y: points[0].y });
+    return repeated;
+  }
+
+  const segments = blendSegments(points, closed);
+  const totalLength = segments.length ? segments[segments.length - 1].endLength : 0;
+  if (totalLength <= 0) return points.slice(0, count);
+
+  const result = [];
+  const denominator = closed ? count : count - 1;
+  for (let index = 0; index < count; index++) {
+    const target = denominator <= 0 ? 0 : totalLength * index / denominator;
+    result.push(pointAtBlendLength(segments, target));
+  }
+  return result;
+}
+
+function blendSegments(points, closed) {
+  const segments = [];
+  let length = 0;
+  const max = closed ? points.length : points.length - 1;
+  for (let index = 0; index < max; index++) {
+    const a = points[index];
+    const b = points[(index + 1) % points.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const segmentLength = Math.sqrt(dx * dx + dy * dy);
+    if (segmentLength <= 0) continue;
+    length += segmentLength;
+    segments.push({
+      a: a,
+      b: b,
+      length: segmentLength,
+      endLength: length
+    });
+  }
+  return segments;
+}
+
+function pointAtBlendLength(segments, target) {
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index];
+    const startLength = segment.endLength - segment.length;
+    if (target <= segment.endLength || index === segments.length - 1) {
+      const local = segment.length <= 0 ? 0 : (target - startLength) / segment.length;
+      return {
+        x: lerp(segment.a.x, segment.b.x, Math.max(0, Math.min(1, local))),
+        y: lerp(segment.a.y, segment.b.y, Math.max(0, Math.min(1, local)))
+      };
+    }
+  }
+  const last = segments[segments.length - 1];
+  return { x: last.b.x, y: last.b.y };
+}
+
+function alignBlendPointOrder(startPoints, endPoints, closed) {
+  if (!startPoints.length || startPoints.length !== endPoints.length) return endPoints;
+  if (!closed) return alignOpenBlendPoints(startPoints, endPoints);
+  const forward = bestClosedBlendShift(startPoints, endPoints);
+  const reversed = reverseBlendPoints(endPoints);
+  const backward = bestClosedBlendShift(startPoints, reversed);
+  return backward.score < forward.score ? backward.points : forward.points;
+}
+
+function alignOpenBlendPoints(startPoints, endPoints) {
+  const normalScore = blendEndpointScore(startPoints, endPoints);
+  const reversed = reverseBlendPoints(endPoints);
+  const reversedScore = blendEndpointScore(startPoints, reversed);
+  return reversedScore < normalScore ? reversed : endPoints;
+}
+
+function blendEndpointScore(startPoints, endPoints) {
+  const last = startPoints.length - 1;
+  return blendPointDistanceSquared(startPoints[0], endPoints[0]) + blendPointDistanceSquared(startPoints[last], endPoints[last]);
+}
+
+function bestClosedBlendShift(startPoints, endPoints) {
+  let bestScore = Infinity;
+  let bestOffset = 0;
+  for (let offset = 0; offset < endPoints.length; offset++) {
+    let score = 0;
+    for (let index = 0; index < startPoints.length; index++) {
+      score += blendPointDistanceSquared(startPoints[index], endPoints[(index + offset) % endPoints.length]);
+    }
+    if (score < bestScore) {
+      bestScore = score;
+      bestOffset = offset;
+    }
+  }
+  const points = [];
+  for (let index = 0; index < endPoints.length; index++) {
+    points.push(endPoints[(index + bestOffset) % endPoints.length]);
+  }
+  return { score: bestScore, points: points };
+}
+
+function reverseBlendPoints(points) {
+  const result = [];
+  for (let index = points.length - 1; index >= 0; index--) result.push(points[index]);
+  return result;
+}
+
+function blendPointDistanceSquared(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function blendPointBounds(points) {
+  let x1 = Infinity;
+  let y1 = Infinity;
+  let x2 = -Infinity;
+  let y2 = -Infinity;
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index];
+    x1 = Math.min(x1, point.x);
+    y1 = Math.min(y1, point.y);
+    x2 = Math.max(x2, point.x);
+    y2 = Math.max(y2, point.y);
+  }
+  if (!isFinite(x1) || !isFinite(y1) || !isFinite(x2) || !isFinite(y2)) {
+    return { x: 0, y: 0, width: 0.01, height: 0.01 };
+  }
+  return { x: x1, y: y1, width: Math.max(0.01, x2 - x1), height: Math.max(0.01, y2 - y1) };
+}
+
+function translateBlendPoints(points, dx, dy) {
+  const result = [];
+  for (let index = 0; index < points.length; index++) {
+    result.push({ x: points[index].x + dx, y: points[index].y + dy });
+  }
+  return result;
+}
+
+function transformBlendPoints(points, matrix) {
+  const result = [];
+  for (let index = 0; index < points.length; index++) {
+    result.push(transformBlendPoint(points[index], matrix));
+  }
+  return result;
+}
+
+function blendNodeToGroupTransform(node, group) {
+  try {
+    if (group && group.absoluteTransform && node.absoluteTransform) {
+      return multiplyBlendTransforms(invertBlendTransform(group.absoluteTransform), node.absoluteTransform);
+    }
+  } catch (_transformError) {}
+  try {
+    if (node.relativeTransform) return node.relativeTransform;
+  } catch (_relativeError) {}
+  return [[1, 0, node.x || 0], [0, 1, node.y || 0]];
+}
+
+function transformBlendPoint(point, matrix) {
+  return {
+    x: matrix[0][0] * point.x + matrix[0][1] * point.y + matrix[0][2],
+    y: matrix[1][0] * point.x + matrix[1][1] * point.y + matrix[1][2]
+  };
+}
+
+function invertBlendTransform(matrix) {
+  const a = matrix[0][0];
+  const c = matrix[0][1];
+  const e = matrix[0][2];
+  const b = matrix[1][0];
+  const d = matrix[1][1];
+  const f = matrix[1][2];
+  const determinant = a * d - b * c;
+  if (Math.abs(determinant) < 0.000001) return [[1, 0, 0], [0, 1, 0]];
+  const invA = d / determinant;
+  const invB = -b / determinant;
+  const invC = -c / determinant;
+  const invD = a / determinant;
+  const invE = -(invA * e + invC * f);
+  const invF = -(invB * e + invD * f);
+  return [[invA, invC, invE], [invB, invD, invF]];
+}
+
+function multiplyBlendTransforms(a, b) {
+  return [
+    [
+      a[0][0] * b[0][0] + a[0][1] * b[1][0],
+      a[0][0] * b[0][1] + a[0][1] * b[1][1],
+      a[0][0] * b[0][2] + a[0][1] * b[1][2] + a[0][2]
+    ],
+    [
+      a[1][0] * b[0][0] + a[1][1] * b[1][0],
+      a[1][0] * b[0][1] + a[1][1] * b[1][1],
+      a[1][0] * b[0][2] + a[1][1] * b[1][2] + a[1][2]
+    ]
+  ];
+}
+
+function blendPointsToPath(points, closed) {
+  if (!points.length) return "";
+  const parts = ["M " + blendRound(points[0].x) + " " + blendRound(points[0].y)];
+  for (let index = 1; index < points.length; index++) {
+    parts.push("L " + blendRound(points[index].x) + " " + blendRound(points[index].y));
+  }
+  if (closed) parts.push("Z");
+  return parts.join(" ");
+}
+
+function blendRound(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function applyBlendPathStyle(node, start, end, t) {
+  if ("opacity" in node && "opacity" in start && "opacity" in end) node.opacity = lerp(start.opacity, end.opacity, t);
+  if ("blendMode" in node && "blendMode" in start && "blendMode" in end) node.blendMode = t < 0.5 ? start.blendMode : end.blendMode;
+  interpolateNodePaints(node, start, end, t);
+  interpolateStrokeWeight(node, start, end, t);
+  interpolateStrokeStyle(node, start, end, t);
+}
+
+function interpolateNodePaints(node, start, end, t) {
+  if ("fills" in node && Array.isArray(start.fills) && Array.isArray(end.fills)) {
+    node.fills = interpolatePaintArray(start.fills, end.fills, t);
+  }
+  if ("strokes" in node && Array.isArray(start.strokes) && Array.isArray(end.strokes)) {
+    node.strokes = interpolatePaintArray(start.strokes, end.strokes, t);
+  }
+}
+
+function interpolatePaintArray(startPaints, endPaints, t) {
+  const max = Math.max(startPaints.length, endPaints.length);
+  const result = [];
+  for (let index = 0; index < max; index++) {
+    const startPaint = startPaints[index] || startPaints[startPaints.length - 1];
+    const endPaint = endPaints[index] || endPaints[endPaints.length - 1];
+    if (!startPaint && !endPaint) continue;
+    const paint = interpolateBlendPaint(startPaint, endPaint, t);
+    if (paint) result.push(paint);
+  }
+  return result;
+}
+
+function interpolateBlendPaint(startPaint, endPaint, t) {
+  if (!startPaint && !endPaint) return null;
+  if (!startPaint || !endPaint) return cloneSerializable(t < 0.5 ? startPaint : endPaint);
+  if (startPaint.type === "SOLID" && endPaint.type === "SOLID") return interpolateSolidBlendPaint(startPaint, endPaint, t);
+  if (isBlendGradientPaint(startPaint) || isBlendGradientPaint(endPaint)) return interpolateGradientBlendPaint(startPaint, endPaint, t);
+  return cloneSerializable(t < 0.5 ? startPaint : endPaint);
+}
+
+function interpolateSolidBlendPaint(startPaint, endPaint, t) {
+  const paint = cloneSerializable(startPaint);
+  paint.color = {
+    r: lerp(startPaint.color.r, endPaint.color.r, t),
+    g: lerp(startPaint.color.g, endPaint.color.g, t),
+    b: lerp(startPaint.color.b, endPaint.color.b, t)
+  };
+  paint.opacity = lerp(paintOpacity(startPaint), paintOpacity(endPaint), t);
+  paint.visible = startPaint.visible !== false || endPaint.visible !== false;
+  return paint;
+}
+
+function interpolateGradientBlendPaint(startPaint, endPaint, t) {
+  const startGradient = isBlendGradientPaint(startPaint) ? startPaint : solidPaintAsGradient(startPaint, endPaint);
+  const endGradient = isBlendGradientPaint(endPaint) ? endPaint : solidPaintAsGradient(endPaint, startPaint);
+  if (!startGradient || !endGradient) return cloneSerializable(t < 0.5 ? startPaint : endPaint);
+
+  const template = cloneSerializable(t < 0.5 ? startGradient : endGradient);
+  template.type = startGradient.type === endGradient.type ? startGradient.type : (t < 0.5 ? startGradient.type : endGradient.type);
+  template.gradientStops = interpolateGradientStops(startGradient, endGradient, t);
+  template.gradientTransform = interpolateGradientTransform(startGradient.gradientTransform, endGradient.gradientTransform, t);
+  template.visible = startPaint.visible !== false || endPaint.visible !== false;
+  if ("opacity" in template) {
+    delete template.opacity;
+  }
+  return template;
+}
+
+function isBlendGradientPaint(paint) {
+  return paint && typeof paint.type === "string" && paint.type.indexOf("GRADIENT_") === 0 && Array.isArray(paint.gradientStops);
+}
+
+function solidPaintAsGradient(solidPaint, gradientTemplate) {
+  if (!solidPaint || solidPaint.type !== "SOLID" || !isBlendGradientPaint(gradientTemplate)) return null;
+  const template = cloneSerializable(gradientTemplate);
+  const positions = gradientStopPositions(gradientTemplate);
+  const color = {
+    r: solidPaint.color.r,
+    g: solidPaint.color.g,
+    b: solidPaint.color.b,
+    a: paintOpacity(solidPaint)
+  };
+  template.gradientStops = positions.map(function (position) {
+    return {
+      position: position,
+      color: Object.assign({}, color)
+    };
+  });
+  template.visible = solidPaint.visible !== false;
+  return template;
+}
+
+function interpolateGradientStops(startPaint, endPaint, t) {
+  const positions = mergeGradientStopPositions(startPaint, endPaint);
+  const stops = [];
+  for (let index = 0; index < positions.length; index++) {
+    const position = positions[index];
+    const startColor = gradientColorAt(startPaint, position);
+    const endColor = gradientColorAt(endPaint, position);
+    stops.push({
+      position: position,
+      color: {
+        r: lerp(startColor.r, endColor.r, t),
+        g: lerp(startColor.g, endColor.g, t),
+        b: lerp(startColor.b, endColor.b, t),
+        a: lerp(startColor.a, endColor.a, t)
+      }
+    });
+  }
+  return stops;
+}
+
+function mergeGradientStopPositions(startPaint, endPaint) {
+  const map = { "0": 0, "1": 1 };
+  const startPositions = gradientStopPositions(startPaint);
+  const endPositions = gradientStopPositions(endPaint);
+  for (let index = 0; index < startPositions.length; index++) {
+    map[String(blendRound(startPositions[index]))] = startPositions[index];
+  }
+  for (let index = 0; index < endPositions.length; index++) {
+    map[String(blendRound(endPositions[index]))] = endPositions[index];
+  }
+  const result = Object.keys(map).map(function (key) {
+    return Math.max(0, Math.min(1, Number(map[key])));
+  });
+  result.sort(function (a, b) { return a - b; });
+  return result;
+}
+
+function gradientStopPositions(paint) {
+  if (!paint || !Array.isArray(paint.gradientStops) || !paint.gradientStops.length) return [0, 1];
+  const positions = [];
+  for (let index = 0; index < paint.gradientStops.length; index++) {
+    const stop = paint.gradientStops[index];
+    positions.push(typeof stop.position === "number" ? stop.position : index / Math.max(1, paint.gradientStops.length - 1));
+  }
+  return positions;
+}
+
+function gradientColorAt(paint, position) {
+  if (!paint || !Array.isArray(paint.gradientStops) || !paint.gradientStops.length) {
+    return { r: 0, g: 0, b: 0, a: 1 };
+  }
+  const stops = cloneSerializable(paint.gradientStops).sort(function (a, b) {
+    return a.position - b.position;
+  });
+  if (position <= stops[0].position) return gradientStopColor(stops[0], paint);
+  const last = stops[stops.length - 1];
+  if (position >= last.position) return gradientStopColor(last, paint);
+  for (let index = 1; index < stops.length; index++) {
+    const before = stops[index - 1];
+    const after = stops[index];
+    if (position <= after.position) {
+      const span = after.position - before.position;
+      const local = span <= 0 ? 0 : (position - before.position) / span;
+      const beforeColor = gradientStopColor(before, paint);
+      const afterColor = gradientStopColor(after, paint);
+      return {
+        r: lerp(beforeColor.r, afterColor.r, local),
+        g: lerp(beforeColor.g, afterColor.g, local),
+        b: lerp(beforeColor.b, afterColor.b, local),
+        a: lerp(beforeColor.a, afterColor.a, local)
+      };
+    }
+  }
+  return gradientStopColor(last, paint);
+}
+
+function gradientStopColor(stop, paint) {
+  const color = stop && stop.color ? stop.color : { r: 0, g: 0, b: 0, a: 1 };
+  const paintAlpha = typeof paint.opacity === "number" ? paint.opacity : 1;
+  return {
+    r: typeof color.r === "number" ? color.r : 0,
+    g: typeof color.g === "number" ? color.g : 0,
+    b: typeof color.b === "number" ? color.b : 0,
+    a: (typeof color.a === "number" ? color.a : 1) * paintAlpha
+  };
+}
+
+function interpolateGradientTransform(startTransform, endTransform, t) {
+  if (!isBlendTransform(startTransform) && !isBlendTransform(endTransform)) return [[1, 0, 0], [0, 1, 0]];
+  if (!isBlendTransform(startTransform)) return cloneSerializable(endTransform);
+  if (!isBlendTransform(endTransform)) return cloneSerializable(startTransform);
+  return [
+    [
+      lerp(startTransform[0][0], endTransform[0][0], t),
+      lerp(startTransform[0][1], endTransform[0][1], t),
+      lerp(startTransform[0][2], endTransform[0][2], t)
+    ],
+    [
+      lerp(startTransform[1][0], endTransform[1][0], t),
+      lerp(startTransform[1][1], endTransform[1][1], t),
+      lerp(startTransform[1][2], endTransform[1][2], t)
+    ]
+  ];
+}
+
+function isBlendTransform(transform) {
+  return Array.isArray(transform) && transform.length >= 2 && Array.isArray(transform[0]) && Array.isArray(transform[1]);
+}
+
+function interpolateStrokeWeight(node, start, end, t) {
+  if (!("strokeWeight" in node) || !("strokeWeight" in start) || !("strokeWeight" in end)) return;
+  if (typeof start.strokeWeight !== "number" || typeof end.strokeWeight !== "number") return;
+  node.strokeWeight = lerp(start.strokeWeight, end.strokeWeight, t);
+}
+
+function interpolateStrokeStyle(node, start, end, t) {
+  if ("strokeCap" in node && "strokeCap" in start && "strokeCap" in end) node.strokeCap = t < 0.5 ? start.strokeCap : end.strokeCap;
+  if ("strokeJoin" in node && "strokeJoin" in start && "strokeJoin" in end) node.strokeJoin = t < 0.5 ? start.strokeJoin : end.strokeJoin;
+  if ("strokeAlign" in node && "strokeAlign" in start && "strokeAlign" in end) node.strokeAlign = t < 0.5 ? start.strokeAlign : end.strokeAlign;
+  if ("strokeMiterLimit" in node && "strokeMiterLimit" in start && "strokeMiterLimit" in end && typeof start.strokeMiterLimit === "number" && typeof end.strokeMiterLimit === "number") {
+    node.strokeMiterLimit = lerp(start.strokeMiterLimit, end.strokeMiterLimit, t);
+  }
+  if ("dashPattern" in node && "dashPattern" in start && "dashPattern" in end) node.dashPattern = t < 0.5 ? cloneSerializable(start.dashPattern) : cloneSerializable(end.dashPattern);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function centerX(node) {
+  return node.x + node.width / 2;
+}
+
+function centerY(node) {
+  return node.y + node.height / 2;
+}
+
+function cloneSerializable(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+async function updateBlendOptions(group, options) {
+  const normalized = normalizeBlendOptions(Object.assign({}, readBlendOptions(group), options || {}));
+  await renderBlend(group, normalized);
+}
+
+async function updateActiveBlend() {
+  const group = getActiveBlendGroup();
+  if (!group) return notifySelectBlend();
+  const selection = figma.currentPage.selection;
+  const selectedEndpoint = selection.length === 1 && selection[0].getSharedPluginData(DATA_NAMESPACE, DATA_KIND) === KIND_BLEND_BASE ? selection[0] : null;
+  await renderBlend(group, readBlendOptions(group));
+  if (selectedEndpoint && selectedEndpoint.parent === group) {
+    figma.currentPage.selection = [selectedEndpoint];
+  } else {
+    figma.currentPage.selection = [group];
+  }
+  figma.notify("Blend updated from endpoints.");
+}
+
+async function toggleBlendEndpointEditMode() {
+  const group = getActiveBlendGroup();
+  if (!group) return notifySelectBlend();
+  const options = readBlendOptions(group);
+  options.editEndpoints = !options.editEndpoints;
+  await renderBlend(group, options);
+  figma.currentPage.selection = [group];
+  figma.notify(options.editEndpoints ? "Blend endpoints are editable." : "Blend endpoints hidden.");
+}
+
+async function selectBlendEndpoint(role) {
+  const group = getActiveBlendGroup();
+  if (!group) return notifySelectBlend();
+  const options = readBlendOptions(group);
+  options.editEndpoints = true;
+  await renderBlend(group, options);
+  const endpoints = getBlendEndpoints(group);
+  const endpoint = role === BLEND_ROLE_END ? endpoints.end : endpoints.start;
+  if (!endpoint) return notifySelectBlend();
+  endpoint.visible = true;
+  endpoint.locked = false;
+  figma.currentPage.selection = [endpoint];
+  figma.notify(role === BLEND_ROLE_END ? "End endpoint selected." : "Start endpoint selected.");
+}
+
+async function releaseBlend() {
+  const group = getActiveBlendGroup();
+  if (!group) return notifySelectBlend();
+  const endpoints = getBlendEndpoints(group);
+  if (!endpoints.start || !endpoints.end || !group.parent) return notifySelectBlend();
+  clearBlendRenders(group);
+  const parent = group.parent;
+  const released = [endpoints.start, endpoints.end];
+  for (let index = 0; index < released.length; index++) {
+    restoreBlendNode(parent, group, released[index]);
+  }
+  group.remove();
+  figma.currentPage.selection = released;
+  figma.notify("Blend released.");
+}
+
+async function expandBlend() {
+  const group = getActiveBlendGroup();
+  if (!group) return notifySelectBlend();
+  if (!group.parent) return notifySelectBlend();
+  const options = readBlendOptions(group);
+  options.editEndpoints = false;
+  await renderBlend(group, options);
+  const parent = group.parent;
+  const expanded = [];
+  for (const child of group.children.slice()) {
+    const kind = child.getSharedPluginData(DATA_NAMESPACE, DATA_KIND);
+    if (kind === KIND_BLEND_RENDER) {
+      child.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, "");
+      restoreBlendNode(parent, group, child);
+      expanded.push(child);
+    } else if (kind === KIND_BLEND_BASE) {
+      child.remove();
+    }
+  }
+  group.remove();
+  figma.currentPage.selection = expanded;
+  figma.notify("Blend expanded.");
+}
+
+function restoreBlendNode(parent, group, node) {
+  const x = node.x;
+  const y = node.y;
+  node.visible = true;
+  node.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, "");
+  node.setSharedPluginData(DATA_NAMESPACE, DATA_BLEND_ROLE, "");
+  parent.appendChild(node);
+  node.x = group.x + x;
+  node.y = group.y + y;
+}
+
+async function reverseBlendFrontToBack() {
+  const group = getActiveBlendGroup();
+  if (!group) return notifySelectBlend();
+  const options = readBlendOptions(group);
+  options.reverseFrontToBack = !options.reverseFrontToBack;
+  await renderBlend(group, options);
+  figma.notify("Blend front-to-back reversed.");
+}
+
+let savedSwatches = [];
+
+async function loadSavedSwatches() {
+  try {
+    const stored = await figma.clientStorage.getAsync(SWATCH_STORAGE_KEY);
+    savedSwatches = normalizeSwatches(stored);
+  } catch (_error) {
+    savedSwatches = [];
+  }
+  sendSelectionState();
+}
+
+async function writeSavedSwatches() {
+  await figma.clientStorage.setAsync(SWATCH_STORAGE_KEY, savedSwatches);
+}
+
+function normalizeSwatches(value) {
+  const source = Array.isArray(value) ? value : [];
+  return source.map(normalizeSwatch).filter(Boolean);
+}
+
+function normalizeSwatch(swatch) {
+  if (!swatch || typeof swatch !== "object") return null;
+  const type = swatch.type === "gradient" ? "gradient" : swatch.type === "pattern" ? "pattern" : "solid";
+  if (type === "pattern") {
+    return {
+      id: swatch.id || createId(),
+      type: "pattern",
+      name: swatch.name || "Pattern",
+      pattern: swatch.pattern || null
+    };
+  }
+  if (type === "gradient") {
+    const stops = normalizeGradientStops(swatch.gradientStops, swatch.gradientStart || DEFAULT_FILL, swatch.gradientEnd || DEFAULT_GRADIENT_END);
+    return {
+      id: swatch.id || createId(),
+      type: "gradient",
+      name: swatch.name || "Gradient",
+      paintType: normalizePaintType(swatch.paintType) === "SOLID" ? "GRADIENT_LINEAR" : normalizePaintType(swatch.paintType),
+      gradientStart: stops[0].color,
+      gradientEnd: stops[stops.length - 1].color,
+      gradientStops: stops,
+      gradientAngle: clampNumber(swatch.gradientAngle, -360, 360, 0)
+    };
+  }
+  const color = normalizeHex(swatch.color || swatch.gradientStart || DEFAULT_FILL, DEFAULT_FILL);
+  return {
+    id: swatch.id || createId(),
+    type: "solid",
+    name: swatch.name || color,
+    color: color
+  };
+}
+
+function swatchFromLayer(layer) {
+  if (!layer) return null;
+  if (layer.paintType === "GRADIENT_LINEAR" || layer.paintType === "GRADIENT_RADIAL") {
+    const stops = normalizeGradientStops(layer.gradientStops, layer.gradientStart, layer.gradientEnd);
+    return normalizeSwatch({
+      id: createId(),
+      type: "gradient",
+      name: layer.paintType === "GRADIENT_RADIAL" ? "Radial Gradient" : "Linear Gradient",
+      paintType: layer.paintType,
+      gradientStart: stops[0].color,
+      gradientEnd: stops[stops.length - 1].color,
+      gradientStops: stops,
+      gradientAngle: layer.gradientAngle
+    });
+  }
+  return normalizeSwatch({
+    id: createId(),
+    type: "solid",
+    name: layer.color || DEFAULT_FILL,
+    color: layer.color || DEFAULT_FILL
+  });
+}
+
+function swatchFromPaint(paint, fallbackColor) {
+  if (!paint || !PAINT_TYPES.includes(paint.type)) return null;
+  const fields = paintToLayerFields(paint, fallbackColor || DEFAULT_FILL);
+  if (fields.paintType === "GRADIENT_LINEAR" || fields.paintType === "GRADIENT_RADIAL") {
+    return normalizeSwatch({
+      id: createId(),
+      type: "gradient",
+      name: fields.paintType === "GRADIENT_RADIAL" ? "Radial Gradient" : "Linear Gradient",
+      paintType: fields.paintType,
+      gradientStart: fields.gradientStart,
+      gradientEnd: fields.gradientEnd,
+      gradientStops: fields.gradientStops,
+      gradientAngle: fields.gradientAngle
+    });
+  }
+  return normalizeSwatch({
+    id: createId(),
+    type: "solid",
+    name: fields.color,
+    color: fields.color
+  });
+}
+
+function firstSelectionPaint(node) {
+  if (!node) return null;
+  if ("fills" in node && Array.isArray(node.fills)) {
+    const fill = findSupportedPaint(node.fills);
+    if (fill) return { paint: fill, fallback: DEFAULT_FILL };
+  }
+  if ("strokes" in node && Array.isArray(node.strokes)) {
+    const stroke = findSupportedPaint(node.strokes);
+    if (stroke) return { paint: stroke, fallback: DEFAULT_STROKE };
+  }
+  return null;
+}
+
+async function saveSwatchFromSelection() {
+  const selection = figma.currentPage.selection;
+  if (selection.length !== 1) {
+    figma.notify("Select one object with a fill or stroke paint.");
+    return;
+  }
+  const selectedPaint = firstSelectionPaint(selection[0]);
+  if (!selectedPaint) {
+    figma.notify("Selected object has no supported solid or gradient paint.");
+    return;
+  }
+  const swatch = swatchFromPaint(selectedPaint.paint, selectedPaint.fallback);
+  if (!swatch) return;
+  savedSwatches.push(swatch);
+  await writeSavedSwatches();
+  figma.notify("Swatch saved from selection.");
+}
+
+async function saveSwatchFromLayer(layerId) {
+  const group = getActiveAppearanceGroup();
+  if (!group) return notifySelectAppearance();
+  const stack = readStack(group);
+  const layer = stack.find(function (item) {
+    return item.id === layerId;
+  });
+  if (!layer) {
+    figma.notify("Select a fill or stroke stack first.");
+    return;
+  }
+  const swatch = swatchFromLayer(layer);
+  if (!swatch) return;
+  savedSwatches.push(swatch);
+  await writeSavedSwatches();
+  figma.notify("Swatch saved.");
+}
+
+async function createSavedSwatch(swatch) {
+  const normalized = normalizeSwatch(Object.assign({}, swatch || {}, { id: createId() }));
+  if (!normalized) return;
+  savedSwatches.push(normalized);
+  await writeSavedSwatches();
+  figma.notify("Swatch saved.");
+}
+
+async function removeSavedSwatch(swatchId) {
+  savedSwatches = savedSwatches.filter(function (swatch) {
+    return swatch.id !== swatchId;
+  });
+  await writeSavedSwatches();
+}
+
+async function applySavedSwatch(layerId, swatchId) {
+  const group = getActiveAppearanceGroup();
+  if (!group) return notifySelectAppearance();
+  const stack = readStack(group);
+  const layerIndex = stack.findIndex(function (item) {
+    return item.id === layerId;
+  });
+  if (layerIndex < 0) {
+    figma.notify("Select a fill or stroke stack first.");
+    return;
+  }
+  const swatch = savedSwatches.find(function (item) {
+    return item.id === swatchId;
+  });
+  if (!swatch) {
+    figma.notify("Swatch not found.");
+    return;
+  }
+  if (swatch.type === "pattern") {
+    figma.notify("Pattern swatches are reserved for future pattern paint support.");
+    return;
+  }
+  stack[layerIndex] = applySwatchToLayer(stack[layerIndex], swatch);
+  await renderAppearance(group, stack);
+}
+
+function applySwatchToLayer(layer, swatch) {
+  if (swatch.type === "gradient") {
+    const stops = normalizeGradientStops(swatch.gradientStops, swatch.gradientStart, swatch.gradientEnd);
+    return normalizeLayer(Object.assign({}, layer, {
+      paintType: swatch.paintType,
+      color: stops[0].color,
+      gradientStart: stops[0].color,
+      gradientEnd: stops[stops.length - 1].color,
+      gradientStops: stops,
+      gradientAngle: swatch.gradientAngle
+    }));
+  }
+  return normalizeLayer(Object.assign({}, layer, {
+    paintType: "SOLID",
+    color: swatch.color,
+    gradientStart: swatch.color,
+    gradientEnd: DEFAULT_GRADIENT_END,
+    gradientStops: defaultGradientStops(swatch.color, DEFAULT_GRADIENT_END)
+  }));
+}
+
 function readStack(group) {
   const raw = group.getSharedPluginData(DATA_NAMESPACE, DATA_STACK);
   if (!raw) return [];
@@ -503,6 +1580,7 @@ function createLayer(type) {
       color: DEFAULT_STROKE,
       gradientStart: DEFAULT_STROKE,
       gradientEnd: DEFAULT_GRADIENT_END,
+      gradientStops: defaultGradientStops(DEFAULT_STROKE, DEFAULT_GRADIENT_END),
       gradientAngle: 0,
       opacity: 100,
       weight: 4,
@@ -524,6 +1602,7 @@ function createLayer(type) {
     color: DEFAULT_FILL,
     gradientStart: DEFAULT_FILL,
     gradientEnd: DEFAULT_GRADIENT_END,
+    gradientStops: defaultGradientStops(DEFAULT_FILL, DEFAULT_GRADIENT_END),
     gradientAngle: 0,
     opacity: 100,
     blendMode: "NORMAL",
@@ -568,6 +1647,7 @@ function normalizeLayer(layer) {
     color: normalizeHex(layer.color || layer.gradientStart || fallbackColor, fallbackColor),
     gradientStart: normalizeHex(layer.gradientStart || layer.color || fallbackColor, fallbackColor),
     gradientEnd: normalizeHex(layer.gradientEnd || DEFAULT_GRADIENT_END, DEFAULT_GRADIENT_END),
+    gradientStops: normalizeGradientStops(layer.gradientStops, layer.gradientStart || layer.color || fallbackColor, layer.gradientEnd || DEFAULT_GRADIENT_END),
     gradientAngle: clampNumber(layer.gradientAngle, -360, 360, 0),
     opacity: clampNumber(layer.opacity, 0, 100, 100),
     blendMode: normalizeBlendMode(layer.blendMode),
@@ -584,6 +1664,33 @@ function normalizeLayer(layer) {
     effects,
     visible: layer.visible !== false
   };
+}
+
+function defaultGradientStops(start, end) {
+  return [
+    { id: createId(), position: 0, color: normalizeHex(start, DEFAULT_FILL) },
+    { id: createId(), position: 100, color: normalizeHex(end, DEFAULT_GRADIENT_END) }
+  ];
+}
+
+function normalizeGradientStops(stops, start, end) {
+  const fallback = defaultGradientStops(start, end);
+  const source = Array.isArray(stops) && stops.length ? stops : fallback;
+  const normalized = source.map(function (stop, index) {
+    const fallbackStop = fallback[Math.min(index, fallback.length - 1)] || fallback[0];
+    return {
+      id: stop && stop.id ? String(stop.id) : createId(),
+      position: clampNumber(stop && stop.position, 0, 100, fallbackStop.position),
+      color: normalizeHex(stop && stop.color, fallbackStop.color)
+    };
+  });
+  normalized.sort(function (a, b) {
+    return a.position - b.position;
+  });
+  if (normalized.length === 1) {
+    normalized.push({ id: createId(), position: 100, color: normalized[0].color });
+  }
+  return normalized;
 }
 
 function legacyEffects(layer) {
@@ -660,6 +1767,20 @@ function createEffect(type) {
       amount: 8,
       joinStyle: "MITER",
       miterLimit: 4,
+      visible: true
+    });
+  }
+
+  if (type === "warp") {
+    return normalizeEffect({
+      id: createId(),
+      type,
+      name: "Warp",
+      warpStyle: "ARC",
+      warpAxis: "HORIZONTAL",
+      bend: 50,
+      hDistort: 0,
+      vDistort: 0,
       visible: true
     });
   }
@@ -841,7 +1962,8 @@ function normalizeEffect(effect) {
     "feather",
     "convertShape",
     "colorHalftone",
-    "scribble"
+    "scribble",
+    "warp"
   ].includes(incomingType)) return null;
   const type = incomingType;
   return {
@@ -877,6 +1999,11 @@ function normalizeEffect(effect) {
     amount: clampNumber(effect.amount, -500, 500, 8),
     joinStyle: normalizeOffsetJoin(effect.joinStyle),
     miterLimit: clampNumber(effect.miterLimit, 1, 100, 4),
+    warpStyle: normalizeWarpStyle(effect.warpStyle),
+    warpAxis: normalizeWarpAxis(effect.warpAxis),
+    bend: clampNumber(effect.bend, -100, 100, 50),
+    hDistort: clampNumber(effect.hDistort, -100, 100, 0),
+    vDistort: clampNumber(effect.vDistort, -100, 100, 0),
     shapeType: normalizeShapeEffectType(effect.shapeType),
     widthExtra: clampNumber(effect.widthExtra, -5000, 5000, 0),
     heightExtra: clampNumber(effect.heightExtra, -5000, 5000, 0),
@@ -889,6 +2016,485 @@ function normalizeEffect(effect) {
     jitter: clampNumber(effect.jitter, 0, 100, 2),
     visible: effect.visible !== false
   };
+}
+
+// Warp effect: Arc, Arc Lower, Arc Upper, Flag, Rise
+// Supports HORIZONTAL and VERTICAL axis like Illustrator
+
+function applyWarpEffect(node, layer, effect) {
+  const bend = Number(effect.bend) || 0;
+  const hDistort = Number(effect.hDistort) || 0;
+  const vDistort = Number(effect.vDistort) || 0;
+
+  // Skip if no warp is applied
+  if (bend === 0 && hDistort === 0 && vDistort === 0) return node;
+
+  if (!("width" in node) || !("height" in node)) return node;
+  const width = node.width;
+  const height = node.height;
+  if (width < 0.1 || height < 0.1) return node;
+
+  // Sample the outline as a dense polygon
+  const points = sampleNodeOutline(node, width, height);
+
+  // Warp each point
+  const warped = points.map(function (pt) {
+    if (pt.type === "M" || pt.type === "L") {
+      var wp = warpPoint(pt.x, pt.y, effect, width, height);
+      return { type: pt.type, x: wp.x, y: wp.y };
+    }
+    return pt; // Z
+  });
+
+  // Build SVG path string
+  var pathData = warpedPointsToPath(warped);
+
+  // Create vector node
+  var vector = figma.createVector();
+  vector.name = node.name;
+  if ("x" in node) vector.x = node.x;
+  if ("y" in node) vector.y = node.y;
+
+  try {
+    vector.vectorPaths = [{ windingRule: "NONZERO", data: pathData }];
+  } catch (_e) {
+    vector.remove();
+    return node;
+  }
+
+  // Copy visual properties from the render node
+  try { if ("fills" in node && "fills" in vector) vector.fills = node.fills; } catch (_e) {}
+  try { if ("strokes" in node && "strokes" in vector) vector.strokes = node.strokes; } catch (_e) {}
+  try { if ("strokeWeight" in node && "strokeWeight" in vector) vector.strokeWeight = node.strokeWeight; } catch (_e) {}
+  try { if ("strokeAlign" in node && "strokeAlign" in vector) vector.strokeAlign = node.strokeAlign; } catch (_e) {}
+  try { if ("effects" in node && "effects" in vector) vector.effects = node.effects; } catch (_e) {}
+  try { if ("opacity" in node) vector.opacity = node.opacity; } catch (_e) {}
+  try { if ("blendMode" in node) vector.blendMode = node.blendMode; } catch (_e) {}
+
+  // Mark as render node
+  vector.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_RENDER);
+
+  // Remove the original clone (it was created inside the group by createLayerRenderNode)
+  node.remove();
+
+  return vector;
+}
+
+// ─── Outline Sampling ──────────────────────────────────────────────────────
+
+function sampleNodeOutline(node, width, height) {
+  // Try fillGeometry first (works for vectors, boolean ops, etc.)
+  try {
+    var geo = node.fillGeometry;
+    if (geo && geo.length > 0 && geo[0].data) {
+      return sampleSvgPath(geo[0].data, 24);
+    }
+  } catch (_e) {}
+
+  // Fall back to generating a rectangle outline (possibly with corner radius)
+  var cr = 0;
+  if ("cornerRadius" in node && typeof node.cornerRadius === "number") {
+    cr = Math.min(node.cornerRadius, width / 2, height / 2);
+  }
+  return sampleRectOutline(width, height, cr, 32);
+}
+
+function sampleRectOutline(w, h, cr, stepsPerEdge) {
+  var points = [];
+  if (cr <= 0) {
+    // Simple rectangle: distribute points along each edge
+    points.push({ type: "M", x: 0, y: 0 });
+    for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: w * i / stepsPerEdge, y: 0 });
+    for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: w, y: h * i / stepsPerEdge });
+    for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: w - w * i / stepsPerEdge, y: h });
+    for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: 0, y: h - h * i / stepsPerEdge });
+    points.push({ type: "Z" });
+    return points;
+  }
+
+  // Rounded rectangle
+  var r = cr;
+  var cornerSteps = 8;
+  points.push({ type: "M", x: r, y: 0 });
+
+  // Top edge
+  for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: r + (w - 2 * r) * i / stepsPerEdge, y: 0 });
+  // Top-right corner
+  for (var i = 1; i <= cornerSteps; i++) {
+    var angle = -Math.PI / 2 + (Math.PI / 2) * i / cornerSteps;
+    points.push({ type: "L", x: w - r + r * Math.cos(angle), y: r + r * Math.sin(angle) });
+  }
+  // Right edge
+  for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: w, y: r + (h - 2 * r) * i / stepsPerEdge });
+  // Bottom-right corner
+  for (var i = 1; i <= cornerSteps; i++) {
+    var angle = 0 + (Math.PI / 2) * i / cornerSteps;
+    points.push({ type: "L", x: w - r + r * Math.cos(angle), y: h - r + r * Math.sin(angle) });
+  }
+  // Bottom edge
+  for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: w - r - (w - 2 * r) * i / stepsPerEdge, y: h });
+  // Bottom-left corner
+  for (var i = 1; i <= cornerSteps; i++) {
+    var angle = Math.PI / 2 + (Math.PI / 2) * i / cornerSteps;
+    points.push({ type: "L", x: r + r * Math.cos(angle), y: h - r + r * Math.sin(angle) });
+  }
+  // Left edge
+  for (var i = 1; i <= stepsPerEdge; i++) points.push({ type: "L", x: 0, y: h - r - (h - 2 * r) * i / stepsPerEdge });
+  // Top-left corner
+  for (var i = 1; i <= cornerSteps; i++) {
+    var angle = Math.PI + (Math.PI / 2) * i / cornerSteps;
+    points.push({ type: "L", x: r + r * Math.cos(angle), y: r + r * Math.sin(angle) });
+  }
+  points.push({ type: "Z" });
+  return points;
+}
+
+// ─── SVG Path Sampling ─────────────────────────────────────────────────────
+
+function sampleSvgPath(data, stepsPerSegment) {
+  var segments = parseSvgPathData(data);
+  var abs = toAbsoluteSegments(segments);
+  return subdivideSegments(abs, stepsPerSegment);
+}
+
+function parseSvgPathData(d) {
+  var re = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+  var result = [];
+  var m;
+  while ((m = re.exec(d)) !== null) {
+    var cmd = m[1];
+    var nums = (m[2].match(/-?[0-9]*\.?[0-9]+(?:e[-+]?[0-9]+)?/gi) || []).map(Number);
+    result.push({ cmd: cmd, args: nums });
+  }
+  return result;
+}
+
+function toAbsoluteSegments(segments) {
+  var out = [];
+  var cx = 0, cy = 0, startX = 0, startY = 0;
+  for (var i = 0; i < segments.length; i++) {
+    var seg = segments[i];
+    var cmd = seg.cmd;
+    var a = seg.args;
+    if (cmd === "M") { cx = a[0]; cy = a[1]; startX = cx; startY = cy; out.push({ cmd: "M", args: [cx, cy] }); }
+    else if (cmd === "m") { cx += a[0]; cy += a[1]; startX = cx; startY = cy; out.push({ cmd: "M", args: [cx, cy] }); }
+    else if (cmd === "L") { cx = a[0]; cy = a[1]; out.push({ cmd: "L", args: [cx, cy] }); }
+    else if (cmd === "l") { cx += a[0]; cy += a[1]; out.push({ cmd: "L", args: [cx, cy] }); }
+    else if (cmd === "H") { cx = a[0]; out.push({ cmd: "L", args: [cx, cy] }); }
+    else if (cmd === "h") { cx += a[0]; out.push({ cmd: "L", args: [cx, cy] }); }
+    else if (cmd === "V") { cy = a[0]; out.push({ cmd: "L", args: [cx, cy] }); }
+    else if (cmd === "v") { cy += a[0]; out.push({ cmd: "L", args: [cx, cy] }); }
+    else if (cmd === "C") { out.push({ cmd: "C", args: a.slice(0, 6) }); cx = a[4]; cy = a[5]; }
+    else if (cmd === "c") { out.push({ cmd: "C", args: [cx+a[0], cy+a[1], cx+a[2], cy+a[3], cx+a[4], cy+a[5]] }); cx += a[4]; cy += a[5]; }
+    else if (cmd === "Q") {
+      var qx = a[0], qy = a[1], ex = a[2], ey = a[3];
+      out.push({ cmd: "C", args: [cx+2/3*(qx-cx), cy+2/3*(qy-cy), ex+2/3*(qx-ex), ey+2/3*(qy-ey), ex, ey] });
+      cx = ex; cy = ey;
+    }
+    else if (cmd === "q") {
+      var qx = cx+a[0], qy = cy+a[1], ex = cx+a[2], ey = cy+a[3];
+      out.push({ cmd: "C", args: [cx+2/3*(qx-cx), cy+2/3*(qy-cy), ex+2/3*(qx-ex), ey+2/3*(qy-ey), ex, ey] });
+      cx = ex; cy = ey;
+    }
+    else if (cmd === "Z" || cmd === "z") { out.push({ cmd: "Z", args: [] }); cx = startX; cy = startY; }
+  }
+  return out;
+}
+
+function subdivideSegments(segments, steps) {
+  var out = [];
+  var cx = 0, cy = 0;
+  for (var i = 0; i < segments.length; i++) {
+    var seg = segments[i];
+    if (seg.cmd === "M") { cx = seg.args[0]; cy = seg.args[1]; out.push({ type: "M", x: cx, y: cy }); continue; }
+    if (seg.cmd === "Z") { out.push({ type: "Z" }); continue; }
+    if (seg.cmd === "L") {
+      var x2 = seg.args[0], y2 = seg.args[1];
+      for (var j = 1; j <= steps; j++) {
+        var t = j / steps;
+        out.push({ type: "L", x: cx + t * (x2 - cx), y: cy + t * (y2 - cy) });
+      }
+      cx = x2; cy = y2; continue;
+    }
+    if (seg.cmd === "C") {
+      var x1 = seg.args[0], y1 = seg.args[1], x2 = seg.args[2], y2 = seg.args[3], x3 = seg.args[4], y3 = seg.args[5];
+      for (var j = 1; j <= steps; j++) {
+        var t = j / steps;
+        var mt = 1 - t;
+        out.push({ type: "L",
+          x: mt*mt*mt*cx + 3*mt*mt*t*x1 + 3*mt*t*t*x2 + t*t*t*x3,
+          y: mt*mt*mt*cy + 3*mt*mt*t*y1 + 3*mt*t*t*y2 + t*t*t*y3
+        });
+      }
+      cx = x3; cy = y3; continue;
+    }
+    out.push({ type: "L", x: cx, y: cy });
+  }
+  return out;
+}
+
+// ─── Warp Point Transform ──────────────────────────────────────────────────
+
+function warpPoint(x, y, effect, width, height) {
+  var bend = effect.bend / 100;
+  var hd = effect.hDistort / 100;
+  var vd = effect.vDistort / 100;
+  var isH = effect.warpAxis === "HORIZONTAL";
+
+  // Normalize to [0,1]
+  var u0 = width > 0 ? x / width : 0;
+  var v0 = height > 0 ? y / height : 0;
+
+  // Primary axis (u) and secondary axis (v) depend on orientation
+  var u = isH ? u0 : v0;
+  var v = isH ? v0 : u0;
+
+  var disp = warpDisplace(effect.warpStyle, u, v, bend);
+
+  // Apply perspective distortion (trapezoid, not shear)
+  // V Distort: scales width by vertical position — bottom wider, top narrower (positive)
+  var du = disp.du + vd * (u - 0.5) * (2 * v - 1);
+  // H Distort: scales height by horizontal position — right taller, left shorter (positive)
+  var dv = disp.dv + hd * (v - 0.5) * (2 * u - 1);
+
+  var newX, newY;
+  if (isH) {
+    newX = (u0 + du) * width;
+    newY = (v0 + dv) * height;
+  } else {
+    newX = (u0 + dv) * width;
+    newY = (v0 + du) * height;
+  }
+
+  return { x: newX, y: newY };
+}
+
+function warpDisplace(style, u, v, bend) {
+  var arc = -bend * Math.sin(Math.PI * u) / 2;
+
+  switch (style) {
+    case "ARC":
+      return { du: 0, dv: arc };
+    case "ARC_LOWER":
+      return { du: 0, dv: arc * v };
+    case "ARC_UPPER":
+      return { du: 0, dv: arc * (1 - v) };
+    case "FLAG":
+      return { du: 0, dv: -bend * Math.sin(2 * Math.PI * u) / 2 };
+    case "RISE":
+      return { du: 0, dv: -bend * u / 2 };
+    default:
+      return { du: 0, dv: 0 };
+  }
+}
+
+// ─── Path Output ───────────────────────────────────────────────────────────
+
+function warpedPointsToPath(points) {
+  var parts = [];
+  for (var i = 0; i < points.length; i++) {
+    var pt = points[i];
+    if (pt.type === "Z") { parts.push("Z"); continue; }
+    parts.push(pt.type + " " + warpRound(pt.x) + " " + warpRound(pt.y));
+  }
+  return parts.join(" ");
+}
+
+function warpRound(n) {
+  return Math.round(n * 100) / 100;
+}
+
+async function simplifySelectedPath(tolerance) {
+  const node = selectedVectorNode();
+  if (!node) return;
+  const amount = clampNumber(tolerance, 0.1, 50, 2);
+  const result = transformVectorPathData(node, function (points, closed) {
+    return simplifyPathPoints(points, amount, closed);
+  });
+  if (result) figma.notify("Path simplified.");
+}
+
+async function smoothSelectedPath(amount) {
+  const node = selectedVectorNode();
+  if (!node) return;
+  const iterations = Math.round(clampNumber(amount, 1, 8, 2));
+  const result = transformVectorPathData(node, function (points, closed) {
+    return smoothPathPoints(points, iterations, closed);
+  });
+  if (result) figma.notify("Path smoothed.");
+}
+
+function selectedVectorNode() {
+  const selection = figma.currentPage.selection;
+  if (selection.length !== 1) {
+    figma.notify("Select one vector path.");
+    return null;
+  }
+  const node = selection[0];
+  if (!("vectorPaths" in node) || !Array.isArray(node.vectorPaths) || !node.vectorPaths.length) {
+    figma.notify("Select a vector path first.");
+    return null;
+  }
+  return node;
+}
+
+function transformVectorPathData(node, transformPoints) {
+  const nextPaths = [];
+  let changed = false;
+  for (let pathIndex = 0; pathIndex < node.vectorPaths.length; pathIndex++) {
+    const vectorPath = node.vectorPaths[pathIndex];
+    const subpaths = vectorPathToPointSubpaths(vectorPath.data);
+    if (!subpaths.length) {
+      nextPaths.push(vectorPath);
+      continue;
+    }
+    const pathParts = [];
+    for (let subIndex = 0; subIndex < subpaths.length; subIndex++) {
+      const subpath = subpaths[subIndex];
+      const points = transformPoints(subpath.points, subpath.closed);
+      if (points.length >= 2) {
+        pathParts.push(pathPointsToSvgData(points, subpath.closed));
+        changed = true;
+      }
+    }
+    nextPaths.push({
+      windingRule: vectorPath.windingRule || "NONZERO",
+      data: pathParts.join(" ")
+    });
+  }
+  if (!changed) return false;
+  try {
+    node.vectorPaths = nextPaths;
+    return true;
+  } catch (_error) {
+    figma.notify("Could not update this path.");
+    return false;
+  }
+}
+
+function vectorPathToPointSubpaths(data) {
+  const sampled = sampleSvgPath(data, 10);
+  const subpaths = [];
+  let current = null;
+  for (let index = 0; index < sampled.length; index++) {
+    const item = sampled[index];
+    if (item.type === "M") {
+      if (current && current.points.length) subpaths.push(current);
+      current = { points: [{ x: item.x, y: item.y }], closed: false };
+    } else if (item.type === "L") {
+      if (!current) current = { points: [], closed: false };
+      current.points.push({ x: item.x, y: item.y });
+    } else if (item.type === "Z") {
+      if (current) current.closed = true;
+    }
+  }
+  if (current && current.points.length) subpaths.push(current);
+  return subpaths;
+}
+
+function simplifyPathPoints(points, tolerance, closed) {
+  if (points.length <= 2) return points.slice();
+  const work = removeDuplicatePathPoints(points);
+  if (work.length <= 2) return work;
+  if (!closed) return rdpSimplify(work, tolerance);
+  const opened = work.slice();
+  opened.push(work[0]);
+  const simplified = rdpSimplify(opened, tolerance);
+  if (simplified.length > 1 && samePathPoint(simplified[0], simplified[simplified.length - 1])) simplified.pop();
+  return simplified.length >= 3 ? simplified : work;
+}
+
+function smoothPathPoints(points, iterations, closed) {
+  let result = removeDuplicatePathPoints(points);
+  for (let index = 0; index < iterations; index++) {
+    result = chaikinSmooth(result, closed);
+  }
+  return result;
+}
+
+function chaikinSmooth(points, closed) {
+  if (points.length < 3) return points.slice();
+  const result = [];
+  if (!closed) result.push(points[0]);
+  const max = closed ? points.length : points.length - 1;
+  for (let index = 0; index < max; index++) {
+    const a = points[index];
+    const b = points[(index + 1) % points.length];
+    result.push({
+      x: a.x * 0.75 + b.x * 0.25,
+      y: a.y * 0.75 + b.y * 0.25
+    });
+    result.push({
+      x: a.x * 0.25 + b.x * 0.75,
+      y: a.y * 0.25 + b.y * 0.75
+    });
+  }
+  if (!closed) result.push(points[points.length - 1]);
+  return result;
+}
+
+function rdpSimplify(points, tolerance) {
+  if (points.length <= 2) return points.slice();
+  let maxDistance = 0;
+  let splitIndex = 0;
+  const first = points[0];
+  const last = points[points.length - 1];
+  for (let index = 1; index < points.length - 1; index++) {
+    const distance = perpendicularDistance(points[index], first, last);
+    if (distance > maxDistance) {
+      maxDistance = distance;
+      splitIndex = index;
+    }
+  }
+  if (maxDistance > tolerance) {
+    const left = rdpSimplify(points.slice(0, splitIndex + 1), tolerance);
+    const right = rdpSimplify(points.slice(splitIndex), tolerance);
+    return left.slice(0, left.length - 1).concat(right);
+  }
+  return [first, last];
+}
+
+function perpendicularDistance(point, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (dx === 0 && dy === 0) return pathPointDistance(point, a);
+  const numerator = Math.abs(dy * point.x - dx * point.y + b.x * a.y - b.y * a.x);
+  return numerator / Math.sqrt(dx * dx + dy * dy);
+}
+
+function removeDuplicatePathPoints(points) {
+  const result = [];
+  for (let index = 0; index < points.length; index++) {
+    const point = points[index];
+    if (!result.length || !samePathPoint(point, result[result.length - 1])) {
+      result.push(point);
+    }
+  }
+  return result;
+}
+
+function samePathPoint(a, b) {
+  return Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
+}
+
+function pathPointDistance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function pathPointsToSvgData(points, closed) {
+  if (!points.length) return "";
+  const parts = ["M " + objectPathRound(points[0].x) + " " + objectPathRound(points[0].y)];
+  for (let index = 1; index < points.length; index++) {
+    parts.push("L " + objectPathRound(points[index].x) + " " + objectPathRound(points[index].y));
+  }
+  if (closed) parts.push("Z");
+  return parts.join(" ");
+}
+
+function objectPathRound(value) {
+  return Math.round(value * 100) / 100;
 }
 
 let didNotifyUnsupportedBetaEffects = false;
@@ -1039,32 +2645,63 @@ function applyLayerEffects(node, layer) {
 }
 
 function applyGeometryPipelineEffects(node, layer) {
+  const warpEffect = firstVisibleEffect(layer, "warp");
+  if (warpEffect) {
+    const warped = applyWarpEffect(node, layer, warpEffect);
+    if (warped) node = warped;
+  }
+
   const offsetEffect = firstVisibleEffect(layer, "offsetPath");
-  if (offsetEffect) applyOffsetPathEffect(node, layer, offsetEffect);
+  if (offsetEffect) {
+    const offsetNode = applyOffsetPathEffect(node, layer, offsetEffect);
+    if (offsetNode) node = offsetNode;
+  }
 
   const roundEffect = firstVisibleEffect(layer, "roundCorners");
   if (roundEffect && "cornerRadius" in node) {
     node.cornerRadius = roundEffect.radius;
   }
+
+  return node;
 }
 
 function applyOffsetPathEffect(node, layer, effect) {
   const amount = Number(effect.amount) || 0;
-  if (amount === 0) return;
-
-  if (node.type === "TEXT" && amount < 0) return;
+  if (amount === 0) return node;
 
   if (layer.type === "fill" && amount > 0 && "strokes" in node) {
+    // Positive offset on fill: expand via outside stroke
     const paint = node.fills && node.fills.length ? clonePaint(node.fills[0]) : layerPaint(layer);
     node.strokes = [paint];
-    if ("strokeWeight" in node) node.strokeWeight = Math.abs(amount) * 2;
+    if ("strokeWeight" in node) node.strokeWeight = amount * 2;
     if ("strokeAlign" in node) node.strokeAlign = "OUTSIDE";
     applyOffsetJoinStyle(node, effect);
-    return;
+    return node;
+  }
+
+  if (amount < 0) {
+    // Negative offset: shrink width/height
+    resizeNodeByOffset(node, amount);
+    // Simulate join style via cornerRadius
+    if ("cornerRadius" in node && typeof node.cornerRadius === "number") {
+      const absAmount = Math.abs(amount);
+      if (effect.joinStyle === "ROUND") {
+        // Round: set cornerRadius to |amount| to create natural inward rounding
+        node.cornerRadius = absAmount;
+      } else if (effect.joinStyle === "BEVEL") {
+        // Bevel: approximate with a small cornerRadius (less than amount)
+        node.cornerRadius = Math.round(absAmount * 0.4);
+      } else {
+        // MITER (default): keep existing cornerRadius, reduced by inset amount
+        node.cornerRadius = Math.max(0, node.cornerRadius + amount);
+      }
+    }
+    return node;
   }
 
   resizeNodeByOffset(node, amount);
   applyOffsetJoinStyle(node, effect);
+  return node;
 }
 
 function applyOffsetJoinStyle(node, effect) {
@@ -1096,13 +2733,13 @@ function appendRasterEffectOverlays(group, base, layer, transform) {
   if (!rasterEffects.length) return;
 
   for (const effect of rasterEffects) {
-    const overlay = createLayerRenderNode(base, layer);
+    let overlay = createLayerRenderNode(base, layer);
     overlay.name = `${layer.name} ${effect.name}`;
     overlay.visible = true;
     overlay.locked = false;
     overlay.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_RENDER);
     applyRasterOverlayAppearance(overlay, layer, effect);
-    applyGeometryPipelineEffects(overlay, layer);
+    overlay = applyGeometryPipelineEffects(overlay, layer);
     applyTransformInstance(overlay, transform);
     group.appendChild(overlay);
   }
@@ -1583,13 +3220,16 @@ function solidPaint(hex, opacity) {
 function gradientPaint(layer) {
   const opacity = layer.opacity / 100;
   const angle = layer.paintType === "GRADIENT_LINEAR" ? layer.gradientAngle : 0;
+  const stops = Array.isArray(layer.gradientStops) && layer.gradientStops.length ? layer.gradientStops : defaultGradientStops(layer.gradientStart, layer.gradientEnd);
   return {
     type: layer.paintType,
     gradientTransform: gradientTransform(angle),
-    gradientStops: [
-      { position: 0, color: Object.assign({}, hexToRgb(layer.gradientStart), { a: opacity }) },
-      { position: 1, color: Object.assign({}, hexToRgb(layer.gradientEnd), { a: opacity }) }
-    ],
+    gradientStops: stops.map(function (stop) {
+      return {
+        position: clampNumber(stop.position, 0, 100, 0) / 100,
+        color: Object.assign({}, hexToRgb(stop.color), { a: opacity })
+      };
+    }),
     visible: true
   };
 }
@@ -1654,6 +3294,13 @@ function paintToLayerFields(paint, fallbackColor) {
       color: start,
       gradientStart: start,
       gradientEnd: end,
+      gradientStops: stops.length ? stops.map(function (stop) {
+        return {
+          id: createId(),
+          position: clampNumber(Number(stop.position) * 100, 0, 100, 0),
+          color: gradientStopToHex(stop) || start
+        };
+      }) : defaultGradientStops(start, end),
       gradientAngle: 0
     };
   }
@@ -1664,6 +3311,7 @@ function paintToLayerFields(paint, fallbackColor) {
     color,
     gradientStart: color,
     gradientEnd: DEFAULT_GRADIENT_END,
+    gradientStops: defaultGradientStops(color, DEFAULT_GRADIENT_END),
     gradientAngle: 0
   };
 }
@@ -1715,6 +3363,18 @@ function normalizeShapeEffectType(value) {
 
 function normalizeOffsetJoin(value) {
   return OFFSET_JOINS.includes(value) ? value : "MITER";
+}
+
+function normalizeWarpStyle(value) {
+  return WARP_STYLES.includes(value) ? value : "ARC";
+}
+
+function normalizeWarpAxis(value) {
+  return WARP_AXES.includes(value) ? value : "HORIZONTAL";
+}
+
+function normalizeBlendSpacingMode(value) {
+  return BLEND_SPACING_MODES.includes(value) ? value : "SPECIFIED_STEPS";
 }
 
 function defaultEffectOpacity(type) {
@@ -1792,6 +3452,7 @@ function effectName(type) {
   if (type === "convertShape") return "Convert to Shape";
   if (type === "colorHalftone") return "Color Halftone";
   if (type === "scribble") return "Scribble";
+  if (type === "warp") return "Warp";
   return titleCase(type);
 }
 
@@ -1937,6 +3598,7 @@ figma.showUI(__html__, { width: 360, height: 620, themeColors: true });
 let availableFonts = [];
 
 loadAvailableFonts();
+loadSavedSwatches();
 
 figma.on("selectionchange", () => {
   sendSelectionState();
@@ -2008,6 +3670,88 @@ figma.ui.onmessage = async (message) => {
       if (!message.silent) sendSelectionState();
     }
 
+    if (message.type === "blend-make") {
+      await makeBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-release") {
+      await releaseBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-expand") {
+      await expandBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-reverse-front-to-back") {
+      await reverseBlendFrontToBack();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-toggle-edit-endpoints") {
+      await toggleBlendEndpointEditMode();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-select-start") {
+      await selectBlendEndpoint(BLEND_ROLE_START);
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-select-end") {
+      await selectBlendEndpoint(BLEND_ROLE_END);
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-update") {
+      await updateActiveBlend();
+      sendSelectionState();
+    }
+
+    if (message.type === "blend-update-options") {
+      const group = getActiveBlendGroup();
+      if (!group) return notifySelectBlend();
+      await updateBlendOptions(group, message.blendOptions || {});
+      if (!message.silent) sendSelectionState();
+    }
+
+    if (message.type === "save-swatch") {
+      await saveSwatchFromLayer(message.layerId || "");
+      sendSelectionState();
+    }
+
+    if (message.type === "save-selection-swatch") {
+      await saveSwatchFromSelection();
+      sendSelectionState();
+    }
+
+    if (message.type === "create-swatch") {
+      await createSavedSwatch(message.swatch || {});
+      sendSelectionState();
+    }
+
+    if (message.type === "remove-swatch") {
+      await removeSavedSwatch(message.swatchId || "");
+      sendSelectionState();
+    }
+
+    if (message.type === "apply-swatch") {
+      await applySavedSwatch(message.layerId || "", message.swatchId || "");
+      sendSelectionState();
+    }
+
+    if (message.type === "simplify-path") {
+      await simplifySelectedPath(message.tolerance);
+      sendSelectionState();
+    }
+
+    if (message.type === "smooth-path") {
+      await smoothSelectedPath(message.amount);
+      sendSelectionState();
+    }
+
     if (message.type === "add-layer") {
       const group = getActiveAppearanceGroup();
       if (!group) return notifySelectAppearance();
@@ -2029,7 +3773,9 @@ figma.ui.onmessage = async (message) => {
           return;
         }
         stack[index].effects.push(createEffect(message.effectKind));
+        figma.currentPage.selection = [group];
         await renderAppearance(group, stack);
+        figma.currentPage.selection = [group];
       }
       sendSelectionState();
     }
@@ -2179,6 +3925,24 @@ figma.ui.onmessage = async (message) => {
       }
       sendSelectionState();
     }
+
+    if (message.type === "reorder-effect") {
+      const group = getActiveAppearanceGroup();
+      if (!group) return notifySelectAppearance();
+      const stack = readStack(group);
+      const layer = stack.find((l) => l.id === message.layerId);
+      if (layer && layer.effects) {
+        const effects = layer.effects;
+        const fromIdx = effects.findIndex((e) => e.id === message.effectId);
+        const toIdx = effects.findIndex((e) => e.id === message.beforeEffectId);
+        if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
+          const moved = effects.splice(fromIdx, 1)[0];
+          effects.splice(toIdx, 0, moved);
+          await renderAppearance(group, stack);
+        }
+      }
+      sendSelectionState();
+    }
   } catch (error) {
     figma.notify(error && error.message ? error.message : "Appearance Stack hit an error.");
   }
@@ -2210,6 +3974,7 @@ async function loadAvailableFonts() {
 function sendSelectionState() {
   const selection = figma.currentPage.selection;
   const group = getActiveAppearanceGroup();
+  const blendGroup = getActiveBlendGroup();
   const base = group ? findBase(group) : null;
   figma.ui.postMessage({
     type: "selection-state",
@@ -2225,7 +3990,11 @@ function sendSelectionState() {
     availableFonts,
     objectProperties: group && base ? readObjectProperties(group, base) : null,
     globalAppearance: group ? readGlobalAppearance(group) : createGlobalAppearance(),
-    stack: group ? readStack(group) : []
+    stack: group ? readStack(group) : [],
+    isBlend: Boolean(blendGroup),
+    blendName: blendGroup ? blendGroup.name : "",
+    blendOptions: blendGroup ? readBlendOptions(blendGroup) : createBlendOptions(),
+    swatches: savedSwatches
   });
 }
 

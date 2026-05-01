@@ -17,13 +17,13 @@ async function renderAppearance(group, stack) {
     if (!layer.visible) continue;
     const transforms = getTransformInstances(layer);
     for (const transform of transforms) {
-      const render = createLayerRenderNode(base, layer);
+      let render = createLayerRenderNode(base, layer);
       render.name = transform.label ? `${layer.name} ${transform.label}` : layer.name;
       render.visible = true;
       render.locked = false;
       render.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_RENDER);
       applyLayerAppearance(render, layer, base);
-      applyGeometryPipelineEffects(render, layer);
+      render = applyGeometryPipelineEffects(render, layer);
       applyTransformInstance(render, transform);
       group.appendChild(render);
       appendRasterEffectOverlays(group, base, layer, transform);

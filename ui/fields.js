@@ -59,7 +59,7 @@ function wireField(input, buildUpdate) {
 
     function isFieldEditing() {
       const active = document.activeElement;
-      return Boolean(active && (active.hasAttribute("data-field") || active.hasAttribute("data-effect-field") || active.hasAttribute("data-text-field") || active.hasAttribute("data-text-style-field") || active.hasAttribute("data-global-field") || active.hasAttribute("data-object-field")));
+      return Boolean(active && (active.hasAttribute("data-field") || active.hasAttribute("data-effect-field") || active.hasAttribute("data-gradient-field") || active.hasAttribute("data-text-field") || active.hasAttribute("data-text-style-field") || active.hasAttribute("data-global-field") || active.hasAttribute("data-object-field") || active.hasAttribute("data-blend-field")));
     }
 
     function ensureExpandedDefaults() {
@@ -85,6 +85,320 @@ function wireField(input, buildUpdate) {
     function updateLocalLayer(updated) {
       state.stack = state.stack.map(function (layer) {
         return layer.id === updated.id ? updated : layer;
+      });
+    }
+
+    function wireGradientStopFields(layerId) {
+      modalBody.querySelectorAll("[data-gradient-field]").forEach(function (input) {
+        input.onfocus = function () {
+          dirtyWhileEditing = false;
+        };
+        input.oninput = function () {
+          updateGradientStopFromInput(layerId, input, true);
+        };
+        input.onchange = function () {
+          updateGradientStopFromInput(layerId, input, false);
+        };
+        input.onblur = function () {
+          updateGradientStopFromInput(layerId, input, false);
+          setTimeout(function () {
+            if (dirtyWhileEditing || !isFieldEditing()) render();
+          }, 0);
+        };
+      });
+
+      modalBody.querySelectorAll("[data-gradient-remove]").forEach(function (button) {
+        button.onclick = function () {
+          const layer = findLayer(layerId);
+          if (!layer) return;
+          const stops = normalizedUiGradientStops(layer);
+          if (stops.length <= 2) return;
+          const updatedStops = stops.filter(function (stop) {
+            return stop.id !== button.dataset.gradientRemove;
+          });
+          updateGradientLayer(layer, updatedStops, false);
+          render();
+        };
+      });
+
+      modalBody.querySelectorAll("[data-gradient-ramp]").forEach(function (ramp) {
+        ramp.onclick = function (event) {
+          if (gradientDrag && gradientDrag.didDrag) return;
+          if (event.target && event.target.hasAttribute("data-gradient-stop")) return;
+          const rect = ramp.getBoundingClientRect();
+          const position = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
+          const layer = findLayer(layerId);
+          if (!layer) return;
+          const stops = normalizedUiGradientStops(layer);
+          const color = gradientColorAtUi(stops, position);
+          stops.push({ id: createUiId(), position: Math.round(position), color: color });
+          updateGradientLayer(layer, stops, false);
+          render();
+        };
+      });
+
+      modalBody.querySelectorAll(".gradient-stop").forEach(function (handle) {
+        handle.onmousedown = function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          const ramp = handle.closest("[data-gradient-ramp]");
+          if (!ramp) return;
+          gradientDrag = {
+            layerId: layerId,
+            stopId: handle.dataset.gradientStop,
+            ramp: ramp,
+            didDrag: false
+          };
+          document.addEventListener("mousemove", onGradientStopDragMove);
+          document.addEventListener("mouseup", onGradientStopDragEnd);
+        };
+      });
+    }
+
+    function wireSwatchDraftFields(inputs) {
+      inputs.forEach(function (input) {
+        input.oninput = function () {
+          updateSwatchDraftField(input);
+        };
+        input.onchange = function () {
+          updateSwatchDraftField(input);
+          if (input.dataset.swatchField === "type" || input.dataset.swatchField === "paintType") {
+            setTimeout(renderModal, 0);
+          }
+        };
+      });
+    }
+
+    function updateSwatchDraftField(input) {
+      const field = input.dataset.swatchField;
+      if (field === "gradientAngle") {
+        swatchDraft.gradientAngle = input.value === "" ? 0 : Number(input.value);
+      } else {
+        swatchDraft[field] = input.value;
+      }
+      refreshSwatchDraftRamp();
+    }
+
+    function wireSwatchGradientFields() {
+      modalBody.querySelectorAll('[data-gradient-ramp="swatch_draft"]').forEach(function (ramp) {
+        ramp.onclick = function (event) {
+          if (gradientDrag && gradientDrag.didDrag) return;
+          if (event.target && event.target.hasAttribute("data-gradient-stop")) return;
+          const rect = ramp.getBoundingClientRect();
+          const position = Math.max(0, Math.min(100, (event.clientX - rect.left) / rect.width * 100));
+          const stops = normalizedUiGradientStops(swatchDraftLayer());
+          const color = gradientColorAtUi(stops, position);
+          swatchDraft.gradientStops = stops.concat([{ id: createUiId(), position: Math.round(position), color: color }]);
+          renderModal();
+        };
+      });
+
+      modalBody.querySelectorAll('[data-gradient-ramp="swatch_draft"] .gradient-stop').forEach(function (handle) {
+        handle.onmousedown = function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          const ramp = handle.closest("[data-gradient-ramp]");
+          if (!ramp) return;
+          gradientDrag = {
+            layerId: "swatch_draft",
+            stopId: handle.dataset.gradientStop,
+            ramp: ramp,
+            didDrag: false
+          };
+          document.addEventListener("mousemove", onSwatchGradientDragMove);
+          document.addEventListener("mouseup", onSwatchGradientDragEnd);
+        };
+      });
+
+      modalBody.querySelectorAll('[data-gradient-ramp="swatch_draft"] [data-gradient-stop]').forEach(function (_handle) {});
+
+      modalBody.querySelectorAll('[data-gradient-field]').forEach(function (input) {
+        input.oninput = function () {
+          updateSwatchGradientStopFromInput(input);
+        };
+        input.onchange = function () {
+          updateSwatchGradientStopFromInput(input);
+        };
+      });
+
+      modalBody.querySelectorAll('[data-gradient-remove]').forEach(function (button) {
+        button.onclick = function () {
+          const stops = normalizedUiGradientStops(swatchDraftLayer());
+          if (stops.length <= 2) return;
+          swatchDraft.gradientStops = stops.filter(function (stop) {
+            return stop.id !== button.dataset.gradientRemove;
+          });
+          renderModal();
+        };
+      });
+    }
+
+    function onSwatchGradientDragMove(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      gradientDrag.didDrag = true;
+      moveSwatchGradientStopToClientX(gradientDrag.stopId, gradientDrag.ramp, event.clientX);
+    }
+
+    function onSwatchGradientDragEnd(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      moveSwatchGradientStopToClientX(gradientDrag.stopId, gradientDrag.ramp, event.clientX);
+      document.removeEventListener("mousemove", onSwatchGradientDragMove);
+      document.removeEventListener("mouseup", onSwatchGradientDragEnd);
+      setTimeout(function () {
+        gradientDrag = null;
+      }, 0);
+    }
+
+    function moveSwatchGradientStopToClientX(stopId, ramp, clientX) {
+      const rect = ramp.getBoundingClientRect();
+      const position = rect.width <= 0 ? 0 : Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100));
+      const rounded = Math.round(position);
+      swatchDraft.gradientStops = normalizedUiGradientStops(swatchDraftLayer()).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        return Object.assign({}, stop, { position: rounded });
+      });
+      refreshSwatchDraftRamp();
+      const input = modalBody.querySelector('[data-gradient-stop="' + stopId + '"][data-gradient-field="position"]');
+      if (input) input.value = String(rounded);
+    }
+
+    function updateSwatchGradientStopFromInput(input) {
+      const stopId = input.dataset.gradientStop;
+      const field = input.dataset.gradientField;
+      swatchDraft.gradientStops = normalizedUiGradientStops(swatchDraftLayer()).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        const updated = Object.assign({}, stop);
+        if (field === "position") updated.position = Math.max(0, Math.min(100, input.value === "" ? 0 : Number(input.value)));
+        if (field === "color") updated.color = input.value;
+        return updated;
+      });
+      refreshSwatchDraftRamp();
+    }
+
+    function refreshSwatchDraftRamp() {
+      const ramp = modalBody.querySelector('[data-gradient-ramp="swatch_draft"]');
+      if (!ramp) return;
+      const layer = swatchDraftLayer();
+      const stops = normalizedUiGradientStops(layer);
+      ramp.setAttribute("style", gradientRampStyle(layer, stops));
+      stops.forEach(function (stop) {
+        const handle = ramp.querySelector('[data-gradient-stop="' + stop.id + '"]');
+        if (handle) {
+          handle.style.left = stop.position + "%";
+          handle.style.background = stop.color;
+          handle.title = stop.position + "%";
+        }
+      });
+    }
+
+    function swatchDraftLayer() {
+      return {
+        id: "swatch_draft",
+        paintType: swatchDraft.paintType,
+        gradientAngle: swatchDraft.gradientAngle,
+        gradientStops: swatchDraft.gradientStops,
+        gradientStart: swatchDraft.gradientStops[0] ? swatchDraft.gradientStops[0].color : "#4F8DFF",
+        gradientEnd: swatchDraft.gradientStops[swatchDraft.gradientStops.length - 1] ? swatchDraft.gradientStops[swatchDraft.gradientStops.length - 1].color : "#B96BFF"
+      };
+    }
+
+    function swatchDraftPayload() {
+      if (swatchDraft.type === "gradient") {
+        const stops = normalizedUiGradientStops(swatchDraftLayer());
+        return {
+          type: "gradient",
+          paintType: swatchDraft.paintType,
+          gradientAngle: swatchDraft.gradientAngle,
+          gradientStart: stops[0].color,
+          gradientEnd: stops[stops.length - 1].color,
+          gradientStops: stops
+        };
+      }
+      return {
+        type: "solid",
+        color: swatchDraft.color
+      };
+    }
+
+    function onGradientStopDragMove(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      gradientDrag.didDrag = true;
+      moveGradientStopToClientX(gradientDrag.layerId, gradientDrag.stopId, gradientDrag.ramp, event.clientX, true);
+    }
+
+    function onGradientStopDragEnd(event) {
+      if (!gradientDrag) return;
+      event.preventDefault();
+      moveGradientStopToClientX(gradientDrag.layerId, gradientDrag.stopId, gradientDrag.ramp, event.clientX, false);
+      document.removeEventListener("mousemove", onGradientStopDragMove);
+      document.removeEventListener("mouseup", onGradientStopDragEnd);
+      setTimeout(function () {
+        gradientDrag = null;
+      }, 0);
+    }
+
+    function moveGradientStopToClientX(layerId, stopId, ramp, clientX, scheduled) {
+      const layer = findLayer(layerId);
+      if (!layer) return;
+      const rect = ramp.getBoundingClientRect();
+      const position = rect.width <= 0 ? 0 : Math.max(0, Math.min(100, (clientX - rect.left) / rect.width * 100));
+      const rounded = Math.round(position);
+      const stops = normalizedUiGradientStops(layer).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        return Object.assign({}, stop, { position: rounded });
+      });
+      updateGradientLayer(layer, stops, scheduled);
+      const input = modalBody.querySelector('[data-gradient-stop="' + stopId + '"][data-gradient-field="position"]');
+      if (input) input.value = String(rounded);
+    }
+
+    function updateGradientStopFromInput(layerId, input, scheduled) {
+      const layer = findLayer(layerId);
+      if (!layer) return;
+      const stopId = input.dataset.gradientStop;
+      const field = input.dataset.gradientField;
+      const stops = normalizedUiGradientStops(layer).map(function (stop) {
+        if (stop.id !== stopId) return stop;
+        const updated = Object.assign({}, stop);
+        if (field === "position") updated.position = Math.max(0, Math.min(100, input.value === "" ? 0 : Number(input.value)));
+        if (field === "color") updated.color = input.value;
+        return updated;
+      });
+      updateGradientLayer(layer, stops, scheduled);
+    }
+
+    function updateGradientLayer(layer, stops, scheduled) {
+      const normalized = normalizedUiGradientStops(Object.assign({}, layer, { gradientStops: stops }));
+      const updated = Object.assign({}, layer, {
+        gradientStops: normalized,
+        gradientStart: normalized[0].color,
+        gradientEnd: normalized[normalized.length - 1].color
+      });
+      updateLocalLayer(updated);
+      refreshGradientEditor(updated);
+      const message = { type: "update-layer", layer: updated, silent: true };
+      if (scheduled) {
+        schedule("layer:" + layer.id, message);
+      } else {
+        flush("layer:" + layer.id, message);
+      }
+    }
+
+    function refreshGradientEditor(layer) {
+      const ramp = modalBody.querySelector('[data-gradient-ramp="' + layer.id + '"]');
+      if (!ramp) return;
+      const stops = normalizedUiGradientStops(layer);
+      ramp.setAttribute("style", gradientRampStyle(layer, stops));
+      stops.forEach(function (stop) {
+        const handle = ramp.querySelector('[data-gradient-stop="' + stop.id + '"]');
+        if (handle) {
+          handle.style.left = stop.position + "%";
+          handle.style.background = stop.color;
+          handle.title = stop.position + "%";
+        }
       });
     }
 
@@ -145,6 +459,14 @@ function wireField(input, buildUpdate) {
         ["SOLID", "Solid"],
         ["GRADIENT_LINEAR", "Linear gradient"],
         ["GRADIENT_RADIAL", "Radial gradient"]
+      ]);
+    }
+
+    function blendSpacingOptions(value) {
+      return enumOptions(value || "SPECIFIED_STEPS", [
+        ["SPECIFIED_STEPS", "Specified steps"],
+        ["SPECIFIED_DISTANCE", "Specified distance"],
+        ["SMOOTH_COLOR", "Smooth color"]
       ]);
     }
 
@@ -224,8 +546,9 @@ function wireField(input, buildUpdate) {
     function isBrightPrintRisk(layer) {
       const colors = [];
       if (layer.color) colors.push(layer.color);
-      if (layer.gradientStart) colors.push(layer.gradientStart);
-      if (layer.gradientEnd) colors.push(layer.gradientEnd);
+      normalizedUiGradientStops(layer).forEach(function (stop) {
+        colors.push(stop.color);
+      });
       return colors.some(function (hex) {
         const rgb = parseHexColor(hex);
         const max = Math.max(rgb[0], rgb[1], rgb[2]);
@@ -308,11 +631,107 @@ function wireField(input, buildUpdate) {
 
     function swatchStyle(layer) {
       if (layer.paintType === "GRADIENT_LINEAR" || layer.paintType === "GRADIENT_RADIAL") {
-        const cssAngle = 90 + (Number(layer.gradientAngle) || 0);
-        const gradient = layer.paintType === "GRADIENT_RADIAL" ? "radial-gradient(circle, " : "linear-gradient(" + cssAngle + "deg, ";
-        return "background:" + gradient + layer.gradientStart + ", " + layer.gradientEnd + ");";
+        return gradientRampStyle(layer, normalizedUiGradientStops(layer));
       }
       return "background:" + layer.color + ";";
+    }
+
+    function swatchStyleFromSwatch(swatch) {
+      if (!swatch) return "background:#4F8DFF;";
+      if (swatch.type === "gradient") {
+        return gradientRampStyle({
+          paintType: swatch.paintType,
+          gradientAngle: swatch.gradientAngle,
+          gradientStops: swatch.gradientStops,
+          gradientStart: swatch.gradientStart,
+          gradientEnd: swatch.gradientEnd
+        }, normalizedUiGradientStops(swatch));
+      }
+      if (swatch.type === "pattern") {
+        return "background:repeating-linear-gradient(45deg, #555 0 6px, #222 6px 12px);";
+      }
+      return "background:" + (swatch.color || "#4F8DFF") + ";";
+    }
+
+    function swatchLabel(swatch) {
+      if (!swatch) return "Swatch";
+      if (swatch.type === "gradient") return swatch.paintType === "GRADIENT_RADIAL" ? "Radial" : "Linear";
+      if (swatch.type === "pattern") return "Pattern";
+      return swatch.color || "Color";
+    }
+
+    function normalizedUiGradientStops(layer) {
+      const fallbackStart = layer.gradientStart || layer.color || "#4F8DFF";
+      const fallbackEnd = layer.gradientEnd || "#B96BFF";
+      const source = Array.isArray(layer.gradientStops) && layer.gradientStops.length ? layer.gradientStops : [
+        { id: createUiId(), position: 0, color: fallbackStart },
+        { id: createUiId(), position: 100, color: fallbackEnd }
+      ];
+      const stops = source.map(function (stop, index) {
+        return {
+          id: stop.id || createUiId(),
+          position: Math.max(0, Math.min(100, Number(stop.position) || (index === 0 ? 0 : 100))),
+          color: stop.color || fallbackStart
+        };
+      });
+      stops.sort(function (a, b) {
+        return a.position - b.position;
+      });
+      if (stops.length === 1) {
+        stops.push({ id: createUiId(), position: 100, color: stops[0].color });
+      }
+      return stops;
+    }
+
+    function gradientRampStyle(layer, stops) {
+      const sorted = stops || normalizedUiGradientStops(layer);
+      const stopText = sorted.map(function (stop) {
+        return stop.color + " " + stop.position + "%";
+      }).join(", ");
+      if (layer.paintType === "GRADIENT_RADIAL") return "background:radial-gradient(circle, " + stopText + ");";
+      const cssAngle = 90 + (Number(layer.gradientAngle) || 0);
+      return "background:linear-gradient(" + cssAngle + "deg, " + stopText + ");";
+    }
+
+    function gradientColorAtUi(stops, position) {
+      const sorted = stops.slice().sort(function (a, b) {
+        return a.position - b.position;
+      });
+      if (!sorted.length) return "#4F8DFF";
+      if (position <= sorted[0].position) return sorted[0].color;
+      const last = sorted[sorted.length - 1];
+      if (position >= last.position) return last.color;
+      for (let index = 1; index < sorted.length; index++) {
+        const before = sorted[index - 1];
+        const after = sorted[index];
+        if (position <= after.position) {
+          const span = after.position - before.position;
+          const local = span <= 0 ? 0 : (position - before.position) / span;
+          return mixHexColor(before.color, after.color, local);
+        }
+      }
+      return last.color;
+    }
+
+    function mixHexColor(a, b, t) {
+      const ca = parseHexColor(a);
+      const cb = parseHexColor(b);
+      return rgbToHexUi(
+        Math.round(ca[0] + (cb[0] - ca[0]) * t),
+        Math.round(ca[1] + (cb[1] - ca[1]) * t),
+        Math.round(ca[2] + (cb[2] - ca[2]) * t)
+      );
+    }
+
+    function rgbToHexUi(r, g, b) {
+      return "#" + [r, g, b].map(function (value) {
+        const hex = Math.max(0, Math.min(255, value)).toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+      }).join("");
+    }
+
+    function createUiId() {
+      return "ui_" + Math.random().toString(36).slice(2, 10);
     }
 
     function post(message) {
