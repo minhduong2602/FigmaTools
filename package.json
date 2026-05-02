@@ -1,9 +1,13 @@
 {
   "scripts": {
     "build": "node scripts/build.js",
-    "check": "node --check code.js && node --check scripts/convert-print.js && node -e \"const fs=require('fs'),vm=require('vm'); const html=fs.readFileSync('ui.html','utf8'); const m=html.match(/<script>([\\s\\S]*)<\\/script>/); new vm.Script(m[1]);\"",
+    "check": "node scripts/check-all.js",
     "print:convert": "node scripts/convert-print.js",
     "print:watch": "node scripts/convert-print.js --watch"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "fit-curve": "^0.2.0",
+    "simplify-js": "^1.2.4",
+    "three": "^0.184.0"
+  }
 }

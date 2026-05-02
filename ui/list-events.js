@@ -34,6 +34,12 @@ function bindEvents() {
         };
       });
 
+      contentEl.querySelectorAll("[data-open-object-tool]").forEach(function (button) {
+        button.onclick = function () {
+          openObjectPathModal(button.dataset.openObjectTool);
+        };
+      });
+
       contentEl.querySelectorAll("[data-object-row]").forEach(function (row) {
         row.ondblclick = function () {
           openObjectModal();

@@ -59,10 +59,43 @@ function openObjectModal() {
       renderModal();
     }
 
+    function openObjectPathModal(tool) {
+      if (state.selectedCount !== 1) return;
+      modalState.kind = "object-path";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      objectPathModalState.tool = tool;
+      objectPathModalState.value = tool === "simplify" ? objectToolsState.simplifyTolerance : objectToolsState.smoothAmount;
+      objectPathModalState.committed = false;
+      fxMenuOpen = false;
+      renderFxMenu();
+      post({
+        type: "object-path-preview-start",
+        tool: tool,
+        value: objectPathModalState.value
+      });
+      renderModal();
+    }
+
+    function openThreeDPreviewModal() {
+      if (activeTab !== "three-d" || !threeDState.source) return;
+      modalState.kind = "three-d-preview";
+      modalState.layerId = "";
+      modalState.effectId = "";
+      fxMenuOpen = false;
+      renderFxMenu();
+      renderModal();
+    }
+
     function closeModal() {
+      if (modalState.kind === "object-path" && !objectPathModalState.committed) {
+        post({ type: "object-path-preview-cancel" });
+      }
       modalState.kind = "";
       modalState.layerId = "";
       modalState.effectId = "";
+      objectPathModalState.tool = "";
+      objectPathModalState.committed = false;
       hideModal();
     }
 
@@ -95,6 +128,23 @@ function openObjectModal() {
         modalBody.innerHTML = swatchModalHtml();
         editorModal.hidden = false;
         bindModalFields();
+        return;
+      }
+
+      if (modalState.kind === "object-path") {
+        modalTitle.textContent = objectPathModalState.tool === "simplify" ? "Simplify Path" : "Smooth Path";
+        modalBody.innerHTML = objectPathModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
+        return;
+      }
+
+      if (modalState.kind === "three-d-preview") {
+        modalTitle.textContent = "3D Preview";
+        modalBody.innerHTML = threeDPreviewModalHtml();
+        editorModal.hidden = false;
+        bindModalFields();
+        ensureThreeDPreview();
         return;
       }
 
@@ -343,6 +393,60 @@ function openObjectModal() {
       ].join("");
     }
 
+    function objectPathModalHtml() {
+      const tool = objectPathModalState.tool || "smooth";
+      const isSimplify = tool === "simplify";
+      const value = Math.round(objectPathModalState.value);
+      const debug = state.objectPathDebug;
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">' + (isSimplify ? "Simplify" : "Smooth") + ' Preview</div>',
+        '<div class="object-path-preview-row">',
+        '<div class="object-path-preview-label">' + (isSimplify ? "Curve precision" : "Smoothness") + '</div>',
+        '<div class="object-path-preview-value">' + value + '%</div>',
+        '</div>',
+        '<input class="object-path-slider" type="range" min="0" max="100" step="1" data-object-path-slider="' + tool + '" value="' + value + '">',
+        '<div class="fields global-row">',
+        '<div class="field"><label>' + (isSimplify ? "Precision" : "Amount") + '</label><input type="number" min="0" max="100" step="1" data-object-path-input="' + tool + '" value="' + value + '"></div>',
+        '<div></div>',
+        '</div>',
+        '<div class="field-note">' + (isSimplify ? "Higher precision keeps more anchor detail. Lower precision removes more points." : "Smooth keeps the same point count and relaxes sharp direction changes while staying close to the original shape.") + '</div>',
+        '</div>',
+        objectPathDebugHtml(debug),
+        '<div class="modal-actions">',
+        '<button class="command-btn" id="object-path-apply">Apply</button>',
+        '<button class="command-btn" id="object-path-cancel">Cancel</button>',
+        '</div>'
+      ].join("");
+    }
+
+    function objectPathDebugHtml(debug) {
+      if (!debug) return '';
+      const beforeBounds = debug.beforeBounds || { width: 0, height: 0 };
+      const afterBounds = debug.afterBounds || { width: 0, height: 0 };
+      return [
+        '<div class="modal-section">',
+        '<div class="modal-section-title">Debug</div>',
+        '<div class="debug-grid">',
+        '<div class="debug-row"><span>Tool</span><span>' + escapeHtml(String(debug.tool || '')) + '</span></div>',
+        '<div class="debug-row"><span>Slider</span><span>' + escapeHtml(String(debug.value === undefined ? '' : Math.round(debug.value))) + '%</span></div>',
+        '<div class="debug-row"><span>Changed</span><span>' + (debug.changed ? 'yes' : 'no') + '</span></div>',
+        '<div class="debug-row"><span>Output</span><span>' + escapeHtml(String(debug.output || '')) + '</span></div>',
+        '<div class="debug-row"><span>Points</span><span>' + escapeHtml(String(debug.beforeCount || 0)) + ' -> ' + escapeHtml(String(debug.afterCount || 0)) + '</span></div>',
+        '<div class="debug-row"><span>Max delta</span><span>' + debugNumber(debug.maxDelta) + '</span></div>',
+        '<div class="debug-row"><span>Avg delta</span><span>' + debugNumber(debug.avgDelta) + '</span></div>',
+        '<div class="debug-row"><span>BBox</span><span>' + debugNumber(beforeBounds.width) + 'x' + debugNumber(beforeBounds.height) + ' -> ' + debugNumber(afterBounds.width) + 'x' + debugNumber(afterBounds.height) + '</span></div>',
+        '</div>',
+        '<div class="field-note">' + escapeHtml(String(debug.message || '')) + '</div>',
+        '</div>'
+      ].join('');
+    }
+
+    function debugNumber(value) {
+      const number = Number(value) || 0;
+      return String(Math.round(number * 100) / 100);
+    }
+
     function bindModalFields() {
       if (modalState.kind === "layer") {
         const layerId = modalState.layerId;
@@ -415,6 +519,84 @@ function openObjectModal() {
           };
         }
       }
+
+      if (modalState.kind === "object-path") {
+        wireObjectPathModal();
+      }
+
+      if (modalState.kind === "three-d-preview") {
+        const openButton = modalBody.querySelector("#three-d-modal-export");
+        if (openButton) {
+          openButton.onclick = function () {
+            exportThreeDRender();
+          };
+        }
+        const relinkButton = modalBody.querySelector("#three-d-modal-relink");
+        if (relinkButton) {
+          relinkButton.onclick = function () {
+            relinkThreeDOriginal();
+          };
+        }
+      }
+    }
+
+    function wireObjectPathModal() {
+      const slider = modalBody.querySelector("[data-object-path-slider]");
+      const input = modalBody.querySelector("[data-object-path-input]");
+      const applyButton = modalBody.querySelector("#object-path-apply");
+      const cancelButton = modalBody.querySelector("#object-path-cancel");
+      if (!slider || !input || !applyButton || !cancelButton) return;
+
+      function syncValue(nextValue, immediate) {
+        const value = Math.max(0, Math.min(100, nextValue));
+        objectPathModalState.value = value;
+        if (objectPathModalState.tool === "simplify") {
+          objectToolsState.simplifyTolerance = value;
+        } else {
+          objectToolsState.smoothAmount = value;
+        }
+        slider.value = String(Math.round(value));
+        input.value = String(Math.round(value));
+        const label = modalBody.querySelector(".object-path-preview-value");
+        if (label) label.textContent = Math.round(value) + "%";
+        if (immediate) {
+          schedule("object-path-preview", {
+            type: "object-path-preview-update",
+            value: value
+          });
+        } else {
+          flush("object-path-preview", {
+            type: "object-path-preview-update",
+            value: value
+          });
+        }
+      }
+
+      slider.oninput = function () {
+        syncValue(Number(slider.value), true);
+      };
+      slider.onchange = function () {
+        syncValue(Number(slider.value), false);
+      };
+      input.oninput = function () {
+        syncValue(input.value === "" ? 0 : Number(input.value), true);
+      };
+      input.onchange = function () {
+        syncValue(input.value === "" ? 0 : Number(input.value), false);
+      };
+      applyButton.onclick = function () {
+        objectPathModalState.committed = true;
+        flush("object-path-preview", {
+          type: "object-path-preview-update",
+          value: objectPathModalState.value
+        });
+        post({ type: "object-path-preview-commit" });
+        closeModal();
+      };
+      cancelButton.onclick = function () {
+        objectPathModalState.committed = false;
+        closeModal();
+      };
     }
 
     function wireModalObjectFields(inputs) {

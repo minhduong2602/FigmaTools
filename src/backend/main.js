@@ -1,4 +1,4 @@
-figma.showUI(__html__, { width: 360, height: 620, themeColors: true });
+figma.showUI(__html__, { width: 460, height: 760, themeColors: true });
 
 let availableFonts = [];
 
@@ -23,6 +23,25 @@ figma.ui.onmessage = async (message) => {
 
     if (message.type === "close-plugin") {
       figma.closePlugin();
+    }
+
+    if (message.type === "resize-ui") {
+      const width = clampNumber(message.width, 280, 1200, 460);
+      const height = clampNumber(message.height, 240, 1200, 760);
+      figma.ui.resize(width, height);
+    }
+
+    if (message.type === "request-3d-source") {
+      await sendThreeDSource();
+    }
+
+    if (message.type === "request-3d-source-by-id") {
+      await sendThreeDSourceById(message.nodeId || "", message.renderNodeId || "");
+    }
+
+    if (message.type === "place-3d-render") {
+      await placeThreeDRender(message);
+      sendSelectionState();
     }
 
     if (message.type === "update-text") {
@@ -154,6 +173,26 @@ figma.ui.onmessage = async (message) => {
 
     if (message.type === "smooth-path") {
       await smoothSelectedPath(message.amount);
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-start") {
+      await startObjectPathPreview(message.tool, message.value);
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-update") {
+      await updateObjectPathPreview(message.value);
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-commit") {
+      commitObjectPathPreview();
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-cancel") {
+      await cancelObjectPathPreview();
       sendSelectionState();
     }
 
@@ -399,7 +438,8 @@ function sendSelectionState() {
     isBlend: Boolean(blendGroup),
     blendName: blendGroup ? blendGroup.name : "",
     blendOptions: blendGroup ? readBlendOptions(blendGroup) : createBlendOptions(),
-    swatches: savedSwatches
+    swatches: savedSwatches,
+    objectPathDebug: readObjectPathDebug()
   });
 }
 

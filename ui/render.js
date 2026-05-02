@@ -14,6 +14,10 @@ function render() {
         renderSwatchesPanel();
         return;
       }
+      if (activeTab === "three-d") {
+        renderThreeDPanel();
+        return;
+      }
       wrapBtn.disabled = !state.hasSelection || state.selectedCount !== 1 || state.isAppearance;
       detachBtn.disabled = !state.isAppearance;
       fxBtn.disabled = !state.isAppearance || !selectedLayer();
@@ -66,11 +70,16 @@ function render() {
       objectTabBtn.classList.toggle("active", activeTab === "object");
       swatchesTabBtn.classList.toggle("active", activeTab === "swatches");
       blendTabBtn.classList.toggle("active", activeTab === "blend");
+      threeDTabBtn.classList.toggle("active", activeTab === "three-d");
       appearanceTools.hidden = activeTab !== "appearance";
       objectTools.hidden = activeTab !== "object";
       appearanceFooter.hidden = activeTab !== "appearance";
       blendTools.hidden = activeTab !== "blend";
       swatchesTools.hidden = activeTab !== "swatches";
+      threeDTools.hidden = activeTab !== "three-d";
+      if (activeTab !== "three-d") {
+        disposeThreeDPreview();
+      }
       fxMenuOpen = activeTab === "appearance" ? fxMenuOpen : false;
       renderFxMenu();
     }
@@ -90,10 +99,11 @@ function render() {
       return [
         '<div class="modal-section">',
         '<div class="modal-section-title">Path Cleanup</div>',
-        '<div class="fields two">',
-        '<div class="field"><label>Simplify tolerance</label><input type="number" min="0.1" max="50" step="0.1" data-object-tool="simplifyTolerance" value="' + objectToolsState.simplifyTolerance + '"></div>',
-        '<div class="field"><label>Smooth amount</label><input type="number" min="1" max="8" step="1" data-object-tool="smoothAmount" value="' + objectToolsState.smoothAmount + '"></div>',
+        '<div class="object-tool-grid">',
+        '<button class="object-tool-card" data-open-object-tool="simplify"><span class="object-tool-name">Simplify</span><span class="object-tool-value">Precision ' + Math.round(objectToolsState.simplifyTolerance) + '%</span></button>',
+        '<button class="object-tool-card" data-open-object-tool="smooth"><span class="object-tool-name">Smooth</span><span class="object-tool-value">' + Math.round(objectToolsState.smoothAmount) + '%</span></button>',
         '</div>',
+        '<div class="field-note">Open a tool, drag the slider to preview directly on the selected path, then apply when it feels right.</div>',
         '</div>'
       ].join("");
     }
@@ -172,7 +182,7 @@ function render() {
     }
 
     function closeModalIfAppearanceOnly() {
-      if (modalState.kind === "object" || modalState.kind === "layer" || modalState.kind === "effect" || modalState.kind === "print") {
+      if (modalState.kind === "object" || modalState.kind === "layer" || modalState.kind === "effect" || modalState.kind === "print" || modalState.kind === "three-d-preview") {
         closeModal();
       }
     }

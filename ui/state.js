@@ -24,7 +24,69 @@ const state = {
     reverseFrontToBack: false,
     editEndpoints: false
   },
-  swatches: []
+  swatches: [],
+  objectPathDebug: null
+};
+
+const threeDState = {
+  source: null,
+  error: "",
+  mode: "extrude",
+  requestPending: false,
+  settings: {
+    depth: 48,
+    bevelSize: 6,
+    bevelThickness: 6,
+    bevelSegments: 4,
+    bevelOffset: 0,
+    bevelProfile: "round",
+    revolveSegments: 56,
+    revolveAngle: 360,
+    revolveAxis: "VERTICAL",
+    revolveAnchor: "MIN",
+    revolveFlip: false,
+    inflateAmount: 20,
+    rotationX: 32,
+    rotationY: -28,
+    rotationZ: 0,
+    offsetX: 0,
+    offsetY: 0,
+    offsetZ: 0,
+    framePadding: 12,
+    ambient: 0.8,
+    directional: 1.15,
+    lightX: 1.5,
+    lightY: 2.2,
+    lightZ: 2.8,
+    zoom: 420,
+    lightingPreset: "studio",
+    environmentPreset: "studio_soft",
+    environmentStrength: 1.2,
+    color: "#D7DFFF",
+    useSourceColor: true,
+    background: "#1D1D1D",
+    transparentBackground: false,
+    exportScale: 2,
+    materialPreset: "plastic",
+    roughness: 0.55,
+    metalness: 0.08,
+    clearcoat: 0.18,
+    transmission: 0,
+    thickness: 0.5,
+    opacity: 1,
+    emissive: "#000000",
+    emissiveIntensity: 0,
+    flatShading: false,
+    iridescence: 0,
+    iridescenceIOR: 1.3,
+    sheen: 0,
+    sheenRoughness: 0.45,
+    bloomEnabled: false,
+    bloomSeparate: false,
+    bloomStrength: 0.85,
+    bloomRadius: 0.35,
+    bloomThreshold: 0.72
+  }
 };
 
 const swatchDraft = {
@@ -39,8 +101,8 @@ const swatchDraft = {
 };
 
 const objectToolsState = {
-  simplifyTolerance: 2,
-  smoothAmount: 2
+  simplifyTolerance: 35,
+  smoothAmount: 40
 };
 
 const expanded = {};
@@ -67,6 +129,11 @@ const modalState = {
   layerId: "",
   effectId: ""
 };
+const objectPathModalState = {
+  tool: "",
+  value: 0,
+  committed: false
+};
 
 const appEl = document.getElementById("app");
 const statusEl = document.getElementById("status");
@@ -75,10 +142,12 @@ const appearanceTabBtn = document.getElementById("tab-appearance");
 const objectTabBtn = document.getElementById("tab-object");
 const swatchesTabBtn = document.getElementById("tab-swatches");
 const blendTabBtn = document.getElementById("tab-blend");
+const threeDTabBtn = document.getElementById("tab-three-d");
 const appearanceTools = document.getElementById("appearance-tools");
 const objectTools = document.getElementById("object-tools");
 const blendTools = document.getElementById("blend-tools");
 const swatchesTools = document.getElementById("swatches-tools");
+const threeDTools = document.getElementById("three-d-tools");
 const appearanceFooter = document.getElementById("appearance-footer");
 const wrapBtn = document.getElementById("wrap");
 const detachBtn = document.getElementById("detach");
@@ -95,6 +164,8 @@ const newSwatchBtn = document.getElementById("new-swatch");
 const saveSwatchBtn = document.getElementById("save-swatch");
 const simplifyPathBtn = document.getElementById("simplify-path");
 const smoothPathBtn = document.getElementById("smooth-path");
+const threeDRefreshBtn = document.getElementById("three-d-refresh");
+const threeDExportBtn = document.getElementById("three-d-export");
 const fxBtn = document.getElementById("fx");
 const fxMenu = document.getElementById("fx-menu");
 const duplicateBtn = document.getElementById("duplicate-layer");
@@ -113,3 +184,4 @@ let draggedEffectId = "";
 let draggedEffectLayerId = "";
 let pendingEffectModal = null;
 let gradientDrag = null;
+let threeDPreviewCompositeUrl = "";

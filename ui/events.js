@@ -3,9 +3,12 @@ wrapBtn.onclick = function () {
   post({ type: "wrap-selection" });
 };
 
+requestUiResizeForTab(activeTab);
+
 appearanceTabBtn.onclick = function () {
   activeTab = "appearance";
   closeModal();
+  requestUiResizeForTab(activeTab);
   render();
 };
 
@@ -13,6 +16,7 @@ objectTabBtn.onclick = function () {
   activeTab = "object";
   fxMenuOpen = false;
   closeModal();
+  requestUiResizeForTab(activeTab);
   render();
 };
 
@@ -20,6 +24,7 @@ blendTabBtn.onclick = function () {
   activeTab = "blend";
   fxMenuOpen = false;
   closeModal();
+  requestUiResizeForTab(activeTab);
   render();
 };
 
@@ -27,6 +32,16 @@ swatchesTabBtn.onclick = function () {
   activeTab = "swatches";
   fxMenuOpen = false;
   closeModal();
+  requestUiResizeForTab(activeTab);
+  render();
+};
+
+threeDTabBtn.onclick = function () {
+  activeTab = "three-d";
+  fxMenuOpen = false;
+  closeModal();
+  requestUiResizeForTab(activeTab);
+  requestThreeDSource();
   render();
 };
 
@@ -82,11 +97,19 @@ saveSwatchBtn.onclick = function () {
 };
 
 simplifyPathBtn.onclick = function () {
-  post({ type: "simplify-path", tolerance: objectToolsState.simplifyTolerance });
+  openObjectPathModal("simplify");
 };
 
 smoothPathBtn.onclick = function () {
-  post({ type: "smooth-path", amount: objectToolsState.smoothAmount });
+  openObjectPathModal("smooth");
+};
+
+threeDRefreshBtn.onclick = function () {
+  requestThreeDSource();
+};
+
+threeDExportBtn.onclick = function () {
+  exportThreeDRender();
 };
 
 duplicateBtn.onclick = function () {
@@ -184,8 +207,24 @@ onmessage = function (event) {
     downloadPrintPackage(message);
     return;
   }
+  if (message.type === "3d-source") {
+    threeDState.requestPending = false;
+    threeDState.source = message.source || null;
+    threeDState.error = message.error || "";
+    if (threeDState.source && threeDState.source.mode) {
+      threeDState.mode = threeDState.source.mode;
+    }
+    if (threeDState.source && threeDState.source.settings) {
+      Object.assign(threeDState.settings, threeDState.source.settings);
+    }
+    if (activeTab === "three-d") render();
+    return;
+  }
   if (message.type !== "selection-state") return;
   Object.assign(state, message);
+  if (activeTab === "three-d") {
+    requestThreeDSource();
+  }
   ensureExpandedDefaults();
   ensureSelectedLayer();
   if (isFieldEditing()) {
@@ -207,3 +246,15 @@ onmessage = function (event) {
     render();
   }
 };
+
+function requestUiResizeForTab(tab) {
+  if (tab === "three-d") {
+    post({ type: "resize-ui", width: 560, height: 820 });
+    return;
+  }
+  if (tab === "appearance") {
+    post({ type: "resize-ui", width: 460, height: 760 });
+    return;
+  }
+  post({ type: "resize-ui", width: 440, height: 720 });
+}

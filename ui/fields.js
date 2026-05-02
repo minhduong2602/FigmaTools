@@ -59,7 +59,7 @@ function wireField(input, buildUpdate) {
 
     function isFieldEditing() {
       const active = document.activeElement;
-      return Boolean(active && (active.hasAttribute("data-field") || active.hasAttribute("data-effect-field") || active.hasAttribute("data-gradient-field") || active.hasAttribute("data-text-field") || active.hasAttribute("data-text-style-field") || active.hasAttribute("data-global-field") || active.hasAttribute("data-object-field") || active.hasAttribute("data-blend-field")));
+      return Boolean(active && (active.hasAttribute("data-field") || active.hasAttribute("data-effect-field") || active.hasAttribute("data-gradient-field") || active.hasAttribute("data-text-field") || active.hasAttribute("data-text-style-field") || active.hasAttribute("data-global-field") || active.hasAttribute("data-object-field") || active.hasAttribute("data-blend-field") || active.hasAttribute("data-object-path-slider") || active.hasAttribute("data-object-path-input")));
     }
 
     function ensureExpandedDefaults() {

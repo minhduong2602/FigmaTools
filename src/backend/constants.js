@@ -4,12 +4,15 @@ const DATA_STACK = "stack";
 const DATA_GLOBAL = "global";
 const DATA_BLEND = "blend";
 const DATA_BLEND_ROLE = "blend_role";
+const DATA_THREE_SOURCE = "three_source";
+const DATA_THREE_META = "three_meta";
 const KIND_GROUP = "group";
 const KIND_BASE = "base";
 const KIND_RENDER = "render";
 const KIND_BLEND_GROUP = "blend_group";
 const KIND_BLEND_BASE = "blend_base";
 const KIND_BLEND_RENDER = "blend_render";
+const KIND_THREE_RENDER = "three_render";
 const BLEND_ROLE_START = "start";
 const BLEND_ROLE_END = "end";
 

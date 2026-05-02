@@ -1,15 +1,783 @@
+var fitCurve = (function () {
+  var module = { exports: {} };
+  var exports = module.exports;
+  (function (global, factory) {
+      if (typeof define === "function" && define.amd) {
+          define(["module"], factory);
+      } else if (typeof exports !== "undefined") {
+          factory(module);
+      } else {
+          var mod = {
+              exports: {}
+          };
+          factory(mod);
+          global.fitCurve = mod.exports;
+      }
+  })(this, function (module) {
+      "use strict";
+
+      function _classCallCheck(instance, Constructor) {
+          if (!(instance instanceof Constructor)) {
+              throw new TypeError("Cannot call a class as a function");
+          }
+      }
+
+      /**
+       *  @preserve  JavaScript implementation of
+       *  Algorithm for Automatically Fitting Digitized Curves
+       *  by Philip J. Schneider
+       *  "Graphics Gems", Academic Press, 1990
+       *
+       *  The MIT License (MIT)
+       *
+       *  https://github.com/soswow/fit-curves
+       */
+
+      /**
+       * Fit one or more Bezier curves to a set of points.
+       *
+       * @param {Array<Array<Number>>} points - Array of digitized points, e.g. [[5,5],[5,50],[110,140],[210,160],[320,110]]
+       * @param {Number} maxError - Tolerance, squared error between points and fitted curve
+       * @returns {Array<Array<Array<Number>>>} Array of Bezier curves, where each element is [first-point, control-point-1, control-point-2, second-point] and points are [x, y]
+       */
+      function fitCurve(points, maxError, progressCallback) {
+          if (!Array.isArray(points)) {
+              throw new TypeError("First argument should be an array");
+          }
+          points.forEach(function (point) {
+              if (!Array.isArray(point) || point.some(function (item) {
+                  return typeof item !== 'number';
+              }) || point.length !== points[0].length) {
+                  throw Error("Each point should be an array of numbers. Each point should have the same amount of numbers.");
+              }
+          });
+
+          // Remove duplicate points
+          points = points.filter(function (point, i) {
+              return i === 0 || !point.every(function (val, j) {
+                  return val === points[i - 1][j];
+              });
+          });
+
+          if (points.length < 2) {
+              return [];
+          }
+
+          var len = points.length;
+          var leftTangent = createTangent(points[1], points[0]);
+          var rightTangent = createTangent(points[len - 2], points[len - 1]);
+
+          return fitCubic(points, leftTangent, rightTangent, maxError, progressCallback);
+      }
+
+      /**
+       * Fit a Bezier curve to a (sub)set of digitized points.
+       * Your code should not call this function directly. Use {@link fitCurve} instead.
+       *
+       * @param {Array<Array<Number>>} points - Array of digitized points, e.g. [[5,5],[5,50],[110,140],[210,160],[320,110]]
+       * @param {Array<Number>} leftTangent - Unit tangent vector at start point
+       * @param {Array<Number>} rightTangent - Unit tangent vector at end point
+       * @param {Number} error - Tolerance, squared error between points and fitted curve
+       * @returns {Array<Array<Array<Number>>>} Array of Bezier curves, where each element is [first-point, control-point-1, control-point-2, second-point] and points are [x, y]
+       */
+      function fitCubic(points, leftTangent, rightTangent, error, progressCallback) {
+          var MaxIterations = 20; //Max times to try iterating (to find an acceptable curve)
+
+          var bezCurve, //Control points of fitted Bezier curve
+          u, //Parameter values for point
+          uPrime, //Improved parameter values
+          maxError, prevErr, //Maximum fitting error
+          splitPoint, prevSplit, //Point to split point set at if we need more than one curve
+          centerVector, toCenterTangent, fromCenterTangent, //Unit tangent vector(s) at splitPoint
+          beziers, //Array of fitted Bezier curves if we need more than one curve
+          dist, i;
+
+          //console.log('fitCubic, ', points.length);
+
+          //Use heuristic if region only has two points in it
+          if (points.length === 2) {
+              dist = maths.vectorLen(maths.subtract(points[0], points[1])) / 3.0;
+              bezCurve = [points[0], maths.addArrays(points[0], maths.mulItems(leftTangent, dist)), maths.addArrays(points[1], maths.mulItems(rightTangent, dist)), points[1]];
+              return [bezCurve];
+          }
+
+          //Parameterize points, and attempt to fit curve
+          u = chordLengthParameterize(points);
+
+          var _generateAndReport = generateAndReport(points, u, u, leftTangent, rightTangent, progressCallback);
+
+          bezCurve = _generateAndReport[0];
+          maxError = _generateAndReport[1];
+          splitPoint = _generateAndReport[2];
+
+
+          if (maxError === 0 || maxError < error) {
+              return [bezCurve];
+          }
+          //If error not too large, try some reparameterization and iteration
+          if (maxError < error * error) {
+
+              uPrime = u;
+              prevErr = maxError;
+              prevSplit = splitPoint;
+
+              for (i = 0; i < MaxIterations; i++) {
+
+                  uPrime = reparameterize(bezCurve, points, uPrime);
+
+                  var _generateAndReport2 = generateAndReport(points, u, uPrime, leftTangent, rightTangent, progressCallback);
+
+                  bezCurve = _generateAndReport2[0];
+                  maxError = _generateAndReport2[1];
+                  splitPoint = _generateAndReport2[2];
+
+
+                  if (maxError < error) {
+                      return [bezCurve];
+                  }
+                  //If the development of the fitted curve grinds to a halt,
+                  //we abort this attempt (and try a shorter curve):
+                  else if (splitPoint === prevSplit) {
+                          var errChange = maxError / prevErr;
+                          if (errChange > .9999 && errChange < 1.0001) {
+                              break;
+                          }
+                      }
+
+                  prevErr = maxError;
+                  prevSplit = splitPoint;
+              }
+          }
+
+          //Fitting failed -- split at max error point and fit recursively
+          beziers = [];
+
+          //To create a smooth transition from one curve segment to the next, we
+          //calculate the line between the points directly before and after the
+          //center, and use that as the tangent both to and from the center point.
+          centerVector = maths.subtract(points[splitPoint - 1], points[splitPoint + 1]);
+          //However, this won't work if they're the same point, because the line we
+          //want to use as a tangent would be 0. Instead, we calculate the line from
+          //that "double-point" to the center point, and use its tangent.
+          if (centerVector.every(function (val) {
+              return val === 0;
+          })) {
+              //[x,y] -> [-y,x]: http://stackoverflow.com/a/4780141/1869660
+              centerVector = maths.subtract(points[splitPoint - 1], points[splitPoint]);
+              var _ref = [-centerVector[1], centerVector[0]];
+              centerVector[0] = _ref[0];
+              centerVector[1] = _ref[1];
+          }
+          toCenterTangent = maths.normalize(centerVector);
+          //To and from need to point in opposite directions:
+          fromCenterTangent = maths.mulItems(toCenterTangent, -1);
+
+          /*
+          Note: An alternative to this "divide and conquer" recursion could be to always
+                let new curve segments start by trying to go all the way to the end,
+                instead of only to the end of the current subdivided polyline.
+                That might let many segments fit a few points more, reducing the number of total segments.
+                 However, a few tests have shown that the segment reduction is insignificant
+                (240 pts, 100 err: 25 curves vs 27 curves. 140 pts, 100 err: 17 curves on both),
+                and the results take twice as many steps and milliseconds to finish,
+                without looking any better than what we already have.
+          */
+          beziers = beziers.concat(fitCubic(points.slice(0, splitPoint + 1), leftTangent, toCenterTangent, error, progressCallback));
+          beziers = beziers.concat(fitCubic(points.slice(splitPoint), fromCenterTangent, rightTangent, error, progressCallback));
+          return beziers;
+      };
+
+      function generateAndReport(points, paramsOrig, paramsPrime, leftTangent, rightTangent, progressCallback) {
+          var bezCurve, maxError, splitPoint;
+
+          bezCurve = generateBezier(points, paramsPrime, leftTangent, rightTangent, progressCallback);
+          //Find max deviation of points to fitted curve.
+          //Here we always use the original parameters (from chordLengthParameterize()),
+          //because we need to compare the current curve to the actual source polyline,
+          //and not the currently iterated parameters which reparameterize() & generateBezier() use,
+          //as those have probably drifted far away and may no longer be in ascending order.
+
+          var _computeMaxError = computeMaxError(points, bezCurve, paramsOrig);
+
+          maxError = _computeMaxError[0];
+          splitPoint = _computeMaxError[1];
+
+
+          if (progressCallback) {
+              progressCallback({
+                  bez: bezCurve,
+                  points: points,
+                  params: paramsOrig,
+                  maxErr: maxError,
+                  maxPoint: splitPoint
+              });
+          }
+
+          return [bezCurve, maxError, splitPoint];
+      }
+
+      /**
+       * Use least-squares method to find Bezier control points for region.
+       *
+       * @param {Array<Array<Number>>} points - Array of digitized points
+       * @param {Array<Number>} parameters - Parameter values for region
+       * @param {Array<Number>} leftTangent - Unit tangent vector at start point
+       * @param {Array<Number>} rightTangent - Unit tangent vector at end point
+       * @returns {Array<Array<Number>>} Approximated Bezier curve: [first-point, control-point-1, control-point-2, second-point] where points are [x, y]
+       */
+      function generateBezier(points, parameters, leftTangent, rightTangent) {
+          var bezCurve,
+              //Bezier curve ctl pts
+          A,
+              a,
+              //Precomputed rhs for eqn
+          C,
+              X,
+              //Matrices C & X
+          det_C0_C1,
+              det_C0_X,
+              det_X_C1,
+              //Determinants of matrices
+          alpha_l,
+              alpha_r,
+              //Alpha values, left and right
+
+          epsilon,
+              segLength,
+              i,
+              len,
+              tmp,
+              u,
+              ux,
+              firstPoint = points[0],
+              lastPoint = points[points.length - 1];
+
+          bezCurve = [firstPoint, null, null, lastPoint];
+          //console.log('gb', parameters.length);
+
+          //Compute the A's
+          A = maths.zeros_Xx2x2(parameters.length);
+          for (i = 0, len = parameters.length; i < len; i++) {
+              u = parameters[i];
+              ux = 1 - u;
+              a = A[i];
+
+              a[0] = maths.mulItems(leftTangent, 3 * u * (ux * ux));
+              a[1] = maths.mulItems(rightTangent, 3 * ux * (u * u));
+          }
+
+          //Create the C and X matrices
+          C = [[0, 0], [0, 0]];
+          X = [0, 0];
+          for (i = 0, len = points.length; i < len; i++) {
+              u = parameters[i];
+              a = A[i];
+
+              C[0][0] += maths.dot(a[0], a[0]);
+              C[0][1] += maths.dot(a[0], a[1]);
+              C[1][0] += maths.dot(a[0], a[1]);
+              C[1][1] += maths.dot(a[1], a[1]);
+
+              tmp = maths.subtract(points[i], bezier.q([firstPoint, firstPoint, lastPoint, lastPoint], u));
+
+              X[0] += maths.dot(a[0], tmp);
+              X[1] += maths.dot(a[1], tmp);
+          }
+
+          //Compute the determinants of C and X
+          det_C0_C1 = C[0][0] * C[1][1] - C[1][0] * C[0][1];
+          det_C0_X = C[0][0] * X[1] - C[1][0] * X[0];
+          det_X_C1 = X[0] * C[1][1] - X[1] * C[0][1];
+
+          //Finally, derive alpha values
+          alpha_l = det_C0_C1 === 0 ? 0 : det_X_C1 / det_C0_C1;
+          alpha_r = det_C0_C1 === 0 ? 0 : det_C0_X / det_C0_C1;
+
+          //If alpha negative, use the Wu/Barsky heuristic (see text).
+          //If alpha is 0, you get coincident control points that lead to
+          //divide by zero in any subsequent NewtonRaphsonRootFind() call.
+          segLength = maths.vectorLen(maths.subtract(firstPoint, lastPoint));
+          epsilon = 1.0e-6 * segLength;
+          if (alpha_l < epsilon || alpha_r < epsilon) {
+              //Fall back on standard (probably inaccurate) formula, and subdivide further if needed.
+              bezCurve[1] = maths.addArrays(firstPoint, maths.mulItems(leftTangent, segLength / 3.0));
+              bezCurve[2] = maths.addArrays(lastPoint, maths.mulItems(rightTangent, segLength / 3.0));
+          } else {
+              //First and last control points of the Bezier curve are
+              //positioned exactly at the first and last data points
+              //Control points 1 and 2 are positioned an alpha distance out
+              //on the tangent vectors, left and right, respectively
+              bezCurve[1] = maths.addArrays(firstPoint, maths.mulItems(leftTangent, alpha_l));
+              bezCurve[2] = maths.addArrays(lastPoint, maths.mulItems(rightTangent, alpha_r));
+          }
+
+          return bezCurve;
+      };
+
+      /**
+       * Given set of points and their parameterization, try to find a better parameterization.
+       *
+       * @param {Array<Array<Number>>} bezier - Current fitted curve
+       * @param {Array<Array<Number>>} points - Array of digitized points
+       * @param {Array<Number>} parameters - Current parameter values
+       * @returns {Array<Number>} New parameter values
+       */
+      function reparameterize(bezier, points, parameters) {
+          /*
+          var j, len, point, results, u;
+          results = [];
+          for (j = 0, len = points.length; j < len; j++) {
+              point = points[j], u = parameters[j];
+               results.push(newtonRaphsonRootFind(bezier, point, u));
+          }
+          return results;
+          //*/
+          return parameters.map(function (p, i) {
+              return newtonRaphsonRootFind(bezier, points[i], p);
+          });
+      };
+
+      /**
+       * Use Newton-Raphson iteration to find better root.
+       *
+       * @param {Array<Array<Number>>} bez - Current fitted curve
+       * @param {Array<Number>} point - Digitized point
+       * @param {Number} u - Parameter value for "P"
+       * @returns {Number} New u
+       */
+      function newtonRaphsonRootFind(bez, point, u) {
+          /*
+              Newton's root finding algorithm calculates f(x)=0 by reiterating
+              x_n+1 = x_n - f(x_n)/f'(x_n)
+              We are trying to find curve parameter u for some point p that minimizes
+              the distance from that point to the curve. Distance point to curve is d=q(u)-p.
+              At minimum distance the point is perpendicular to the curve.
+              We are solving
+              f = q(u)-p * q'(u) = 0
+              with
+              f' = q'(u) * q'(u) + q(u)-p * q''(u)
+              gives
+              u_n+1 = u_n - |q(u_n)-p * q'(u_n)| / |q'(u_n)**2 + q(u_n)-p * q''(u_n)|
+          */
+
+          var d = maths.subtract(bezier.q(bez, u), point),
+              qprime = bezier.qprime(bez, u),
+              numerator = maths.mulMatrix(d, qprime),
+              denominator = maths.sum(maths.squareItems(qprime)) + 2 * maths.mulMatrix(d, bezier.qprimeprime(bez, u));
+
+          if (denominator === 0) {
+              return u;
+          } else {
+              return u - numerator / denominator;
+          }
+      };
+
+      /**
+       * Assign parameter values to digitized points using relative distances between points.
+       *
+       * @param {Array<Array<Number>>} points - Array of digitized points
+       * @returns {Array<Number>} Parameter values
+       */
+      function chordLengthParameterize(points) {
+          var u = [],
+              currU,
+              prevU,
+              prevP;
+
+          points.forEach(function (p, i) {
+              currU = i ? prevU + maths.vectorLen(maths.subtract(p, prevP)) : 0;
+              u.push(currU);
+
+              prevU = currU;
+              prevP = p;
+          });
+          u = u.map(function (x) {
+              return x / prevU;
+          });
+
+          return u;
+      };
+
+      /**
+       * Find the maximum squared distance of digitized points to fitted curve.
+       *
+       * @param {Array<Array<Number>>} points - Array of digitized points
+       * @param {Array<Array<Number>>} bez - Fitted curve
+       * @param {Array<Number>} parameters - Parameterization of points
+       * @returns {Array<Number>} Maximum error (squared) and point of max error
+       */
+      function computeMaxError(points, bez, parameters) {
+          var dist, //Current error
+          maxDist, //Maximum error
+          splitPoint, //Point of maximum error
+          v, //Vector from point to curve
+          i, count, point, t;
+
+          maxDist = 0;
+          splitPoint = Math.floor(points.length / 2);
+
+          var t_distMap = mapTtoRelativeDistances(bez, 10);
+
+          for (i = 0, count = points.length; i < count; i++) {
+              point = points[i];
+              //Find 't' for a point on the bez curve that's as close to 'point' as possible:
+              t = find_t(bez, parameters[i], t_distMap, 10);
+
+              v = maths.subtract(bezier.q(bez, t), point);
+              dist = v[0] * v[0] + v[1] * v[1];
+
+              if (dist > maxDist) {
+                  maxDist = dist;
+                  splitPoint = i;
+              }
+          }
+
+          return [maxDist, splitPoint];
+      };
+
+      //Sample 't's and map them to relative distances along the curve:
+      var mapTtoRelativeDistances = function mapTtoRelativeDistances(bez, B_parts) {
+          var B_t_curr;
+          var B_t_dist = [0];
+          var B_t_prev = bez[0];
+          var sumLen = 0;
+
+          for (var i = 1; i <= B_parts; i++) {
+              B_t_curr = bezier.q(bez, i / B_parts);
+
+              sumLen += maths.vectorLen(maths.subtract(B_t_curr, B_t_prev));
+
+              B_t_dist.push(sumLen);
+              B_t_prev = B_t_curr;
+          }
+
+          //Normalize B_length to the same interval as the parameter distances; 0 to 1:
+          B_t_dist = B_t_dist.map(function (x) {
+              return x / sumLen;
+          });
+          return B_t_dist;
+      };
+
+      function find_t(bez, param, t_distMap, B_parts) {
+          if (param < 0) {
+              return 0;
+          }
+          if (param > 1) {
+              return 1;
+          }
+
+          /*
+              'param' is a value between 0 and 1 telling us the relative position
+              of a point on the source polyline (linearly from the start (0) to the end (1)).
+              To see if a given curve - 'bez' - is a close approximation of the polyline,
+              we compare such a poly-point to the point on the curve that's the same
+              relative distance along the curve's length.
+               But finding that curve-point takes a little work:
+              There is a function "B(t)" to find points along a curve from the parametric parameter 't'
+              (also relative from 0 to 1: http://stackoverflow.com/a/32841764/1869660
+                                          http://pomax.github.io/bezierinfo/#explanation),
+              but 't' isn't linear by length (http://gamedev.stackexchange.com/questions/105230).
+               So, we sample some points along the curve using a handful of values for 't'.
+              Then, we calculate the length between those samples via plain euclidean distance;
+              B(t) concentrates the points around sharp turns, so this should give us a good-enough outline of the curve.
+              Thus, for a given relative distance ('param'), we can now find an upper and lower value
+              for the corresponding 't' by searching through those sampled distances.
+              Finally, we just use linear interpolation to find a better value for the exact 't'.
+               More info:
+                  http://gamedev.stackexchange.com/questions/105230/points-evenly-spaced-along-a-bezier-curve
+                  http://stackoverflow.com/questions/29438398/cheap-way-of-calculating-cubic-bezier-length
+                  http://steve.hollasch.net/cgindex/curves/cbezarclen.html
+                  https://github.com/retuxx/tinyspline
+          */
+          var lenMax, lenMin, tMax, tMin, t;
+
+          //Find the two t-s that the current param distance lies between,
+          //and then interpolate a somewhat accurate value for the exact t:
+          for (var i = 1; i <= B_parts; i++) {
+
+              if (param <= t_distMap[i]) {
+                  tMin = (i - 1) / B_parts;
+                  tMax = i / B_parts;
+                  lenMin = t_distMap[i - 1];
+                  lenMax = t_distMap[i];
+
+                  t = (param - lenMin) / (lenMax - lenMin) * (tMax - tMin) + tMin;
+                  break;
+              }
+          }
+          return t;
+      }
+
+      /**
+       * Creates a vector of length 1 which shows the direction from B to A
+       */
+      function createTangent(pointA, pointB) {
+          return maths.normalize(maths.subtract(pointA, pointB));
+      }
+
+      /*
+          Simplified versions of what we need from math.js
+          Optimized for our input, which is only numbers and 1x2 arrays (i.e. [x, y] coordinates).
+      */
+
+      var maths = function () {
+          function maths() {
+              _classCallCheck(this, maths);
+          }
+
+          maths.zeros_Xx2x2 = function zeros_Xx2x2(x) {
+              var zs = [];
+              while (x--) {
+                  zs.push([0, 0]);
+              }
+              return zs;
+          };
+
+          maths.mulItems = function mulItems(items, multiplier) {
+              return items.map(function (x) {
+                  return x * multiplier;
+              });
+          };
+
+          maths.mulMatrix = function mulMatrix(m1, m2) {
+              //https://en.wikipedia.org/wiki/Matrix_multiplication#Matrix_product_.28two_matrices.29
+              //Simplified to only handle 1-dimensional matrices (i.e. arrays) of equal length:
+              return m1.reduce(function (sum, x1, i) {
+                  return sum + x1 * m2[i];
+              }, 0);
+          };
+
+          maths.subtract = function subtract(arr1, arr2) {
+              return arr1.map(function (x1, i) {
+                  return x1 - arr2[i];
+              });
+          };
+
+          maths.addArrays = function addArrays(arr1, arr2) {
+              return arr1.map(function (x1, i) {
+                  return x1 + arr2[i];
+              });
+          };
+
+          maths.addItems = function addItems(items, addition) {
+              return items.map(function (x) {
+                  return x + addition;
+              });
+          };
+
+          maths.sum = function sum(items) {
+              return items.reduce(function (sum, x) {
+                  return sum + x;
+              });
+          };
+
+          maths.dot = function dot(m1, m2) {
+              return maths.mulMatrix(m1, m2);
+          };
+
+          maths.vectorLen = function vectorLen(v) {
+              return Math.hypot.apply(Math, v);
+          };
+
+          maths.divItems = function divItems(items, divisor) {
+              return items.map(function (x) {
+                  return x / divisor;
+              });
+          };
+
+          maths.squareItems = function squareItems(items) {
+              return items.map(function (x) {
+                  return x * x;
+              });
+          };
+
+          maths.normalize = function normalize(v) {
+              return this.divItems(v, this.vectorLen(v));
+          };
+
+          return maths;
+      }();
+
+      var bezier = function () {
+          function bezier() {
+              _classCallCheck(this, bezier);
+          }
+
+          bezier.q = function q(ctrlPoly, t) {
+              var tx = 1.0 - t;
+              var pA = maths.mulItems(ctrlPoly[0], tx * tx * tx),
+                  pB = maths.mulItems(ctrlPoly[1], 3 * tx * tx * t),
+                  pC = maths.mulItems(ctrlPoly[2], 3 * tx * t * t),
+                  pD = maths.mulItems(ctrlPoly[3], t * t * t);
+              return maths.addArrays(maths.addArrays(pA, pB), maths.addArrays(pC, pD));
+          };
+
+          bezier.qprime = function qprime(ctrlPoly, t) {
+              var tx = 1.0 - t;
+              var pA = maths.mulItems(maths.subtract(ctrlPoly[1], ctrlPoly[0]), 3 * tx * tx),
+                  pB = maths.mulItems(maths.subtract(ctrlPoly[2], ctrlPoly[1]), 6 * tx * t),
+                  pC = maths.mulItems(maths.subtract(ctrlPoly[3], ctrlPoly[2]), 3 * t * t);
+              return maths.addArrays(maths.addArrays(pA, pB), pC);
+          };
+
+          bezier.qprimeprime = function qprimeprime(ctrlPoly, t) {
+              return maths.addArrays(maths.mulItems(maths.addArrays(maths.subtract(ctrlPoly[2], maths.mulItems(ctrlPoly[1], 2)), ctrlPoly[0]), 6 * (1.0 - t)), maths.mulItems(maths.addArrays(maths.subtract(ctrlPoly[3], maths.mulItems(ctrlPoly[2], 2)), ctrlPoly[1]), 6 * t));
+          };
+
+          return bezier;
+      }();
+
+      module.exports = fitCurve;
+      module.exports.fitCubic = fitCubic;
+      module.exports.createTangent = createTangent;
+  });
+  return module.exports;
+})();
+
+var simplifyPathLib = (function () {
+  var module = { exports: {} };
+  var exports = module.exports;
+  /*
+   (c) 2017, Vladimir Agafonkin
+   Simplify.js, a high-performance JS polyline simplification library
+   mourner.github.io/simplify-js
+  */
+
+  (function () { 'use strict';
+
+  // to suit your point format, run search/replace for '.x' and '.y';
+  // for 3D version, see 3d branch (configurability would draw significant performance overhead)
+
+  // square distance between 2 points
+  function getSqDist(p1, p2) {
+
+      var dx = p1.x - p2.x,
+          dy = p1.y - p2.y;
+
+      return dx * dx + dy * dy;
+  }
+
+  // square distance from a point to a segment
+  function getSqSegDist(p, p1, p2) {
+
+      var x = p1.x,
+          y = p1.y,
+          dx = p2.x - x,
+          dy = p2.y - y;
+
+      if (dx !== 0 || dy !== 0) {
+
+          var t = ((p.x - x) * dx + (p.y - y) * dy) / (dx * dx + dy * dy);
+
+          if (t > 1) {
+              x = p2.x;
+              y = p2.y;
+
+          } else if (t > 0) {
+              x += dx * t;
+              y += dy * t;
+          }
+      }
+
+      dx = p.x - x;
+      dy = p.y - y;
+
+      return dx * dx + dy * dy;
+  }
+  // rest of the code doesn't care about point format
+
+  // basic distance-based simplification
+  function simplifyRadialDist(points, sqTolerance) {
+
+      var prevPoint = points[0],
+          newPoints = [prevPoint],
+          point;
+
+      for (var i = 1, len = points.length; i < len; i++) {
+          point = points[i];
+
+          if (getSqDist(point, prevPoint) > sqTolerance) {
+              newPoints.push(point);
+              prevPoint = point;
+          }
+      }
+
+      if (prevPoint !== point) newPoints.push(point);
+
+      return newPoints;
+  }
+
+  function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+      var maxSqDist = sqTolerance,
+          index;
+
+      for (var i = first + 1; i < last; i++) {
+          var sqDist = getSqSegDist(points[i], points[first], points[last]);
+
+          if (sqDist > maxSqDist) {
+              index = i;
+              maxSqDist = sqDist;
+          }
+      }
+
+      if (maxSqDist > sqTolerance) {
+          if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+          simplified.push(points[index]);
+          if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+      }
+  }
+
+  // simplification using Ramer-Douglas-Peucker algorithm
+  function simplifyDouglasPeucker(points, sqTolerance) {
+      var last = points.length - 1;
+
+      var simplified = [points[0]];
+      simplifyDPStep(points, 0, last, sqTolerance, simplified);
+      simplified.push(points[last]);
+
+      return simplified;
+  }
+
+  // both algorithms combined for awesome performance
+  function simplify(points, tolerance, highestQuality) {
+
+      if (points.length <= 2) return points;
+
+      var sqTolerance = tolerance !== undefined ? tolerance * tolerance : 1;
+
+      points = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
+      points = simplifyDouglasPeucker(points, sqTolerance);
+
+      return points;
+  }
+
+  // export as AMD module / Node module / browser or worker variable
+  if (typeof define === 'function' && define.amd) define(function() { return simplify; });
+  else if (typeof module !== 'undefined') {
+      module.exports = simplify;
+      module.exports.default = simplify;
+  } else if (typeof self !== 'undefined') self.simplify = simplify;
+  else window.simplify = simplify;
+
+  })();
+  return module.exports.default || module.exports;
+})();
+
 const DATA_NAMESPACE = "appearance_stack";
 const DATA_KIND = "kind";
 const DATA_STACK = "stack";
 const DATA_GLOBAL = "global";
 const DATA_BLEND = "blend";
 const DATA_BLEND_ROLE = "blend_role";
+const DATA_THREE_SOURCE = "three_source";
+const DATA_THREE_META = "three_meta";
 const KIND_GROUP = "group";
 const KIND_BASE = "base";
 const KIND_RENDER = "render";
 const KIND_BLEND_GROUP = "blend_group";
 const KIND_BLEND_BASE = "blend_base";
 const KIND_BLEND_RENDER = "blend_render";
+const KIND_THREE_RENDER = "three_render";
 const BLEND_ROLE_START = "start";
 const BLEND_ROLE_END = "end";
 
@@ -192,6 +960,299 @@ async function detachAppearance() {
   group.remove();
   figma.currentPage.selection = [base];
   figma.notify("Appearance stack detached.");
+}
+
+async function sendThreeDSource() {
+  const selection = figma.currentPage.selection;
+  if (selection.length !== 1) {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: null
+    });
+    return;
+  }
+
+  const node = selection[0];
+  if (isThreeDRenderNode(node)) {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: readThreeDRenderSource(node)
+    });
+    return;
+  }
+
+  if (!node || typeof node.exportAsync !== "function") {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: null,
+      error: "Selected object cannot be exported as SVG."
+    });
+    return;
+  }
+
+  await sendNodeAsThreeDSource(node, false, "");
+}
+
+async function sendThreeDSourceById(nodeId, renderNodeId) {
+  if (!nodeId || typeof figma.getNodeByIdAsync !== "function") {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: null,
+      error: "Original source is no longer available."
+    });
+    return;
+  }
+
+  const node = await figma.getNodeByIdAsync(String(nodeId));
+  if (!node || typeof node.exportAsync !== "function") {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: null,
+      error: "Original source is missing or cannot be exported."
+    });
+    return;
+  }
+
+  await sendNodeAsThreeDSource(node, false, renderNodeId || "");
+}
+
+async function placeThreeDRender(payload) {
+  const imageBytes = decodeBase64Png(payload && payload.pngDataUrl);
+  if (!imageBytes) {
+    throw new Error("3D preview image is missing.");
+  }
+
+  const image = figma.createImage(imageBytes);
+  const selection = figma.currentPage.selection;
+  const selectedNode = selection.length === 1 ? selection[0] : null;
+  const updatingExisting = isThreeDRenderNode(selectedNode);
+  const hasSeparateBloom = Boolean(payload && payload.bloomDataUrl);
+  const sourceNode = updatingExisting ? null : selectedNode;
+  const targetWidth = clampNumber(payload && payload.width, 1, 10000, updatingExisting ? ("width" in selectedNode ? selectedNode.width : 240) : sourceNode && "width" in sourceNode ? sourceNode.width : 240);
+  const targetHeight = clampNumber(payload && payload.height, 1, 10000, updatingExisting ? ("height" in selectedNode ? selectedNode.height : 240) : sourceNode && "height" in sourceNode ? sourceNode.height : 240);
+
+  let container = updatingExisting ? selectedNode : null;
+  if (!container) {
+    container = hasSeparateBloom ? figma.createFrame() : figma.createRectangle();
+  } else if (hasSeparateBloom && container.type !== "FRAME") {
+    container = convertThreeDRenderToFrame(container, targetWidth, targetHeight);
+  }
+
+  if (!container) {
+    throw new Error("Could not create 3D render container.");
+  }
+
+  container.name = (payload && payload.name ? payload.name : "3D Object") + " Render";
+
+  if (hasSeparateBloom && container.type === "FRAME") {
+    container.clipsContent = false;
+    container.fills = [];
+    container.strokes = [];
+    container.resizeWithoutConstraints(Math.max(1, targetWidth), Math.max(1, targetHeight));
+    const baseRect = ensureThreeDFrameChild(container, "Base");
+    applyThreeDImageFill(baseRect, image.hash);
+    baseRect.resizeWithoutConstraints(Math.max(1, targetWidth), Math.max(1, targetHeight));
+    baseRect.x = 0;
+    baseRect.y = 0;
+
+    const bloomBytes = decodeBase64Png(payload && payload.bloomDataUrl);
+    const bloomImage = bloomBytes ? figma.createImage(bloomBytes) : null;
+    const bloomRect = ensureThreeDFrameChild(container, "Bloom");
+    if (bloomImage) {
+      applyThreeDImageFill(bloomRect, bloomImage.hash);
+    }
+    bloomRect.resizeWithoutConstraints(Math.max(1, targetWidth), Math.max(1, targetHeight));
+    bloomRect.x = 0;
+    bloomRect.y = 0;
+    bloomRect.opacity = clampNumber(payload && payload.bloomOpacity, 0, 100, 100) / 100;
+    if ("blendMode" in bloomRect) {
+      bloomRect.blendMode = normalizeBlendMode(payload && payload.bloomBlendMode ? payload.bloomBlendMode : "SCREEN");
+    }
+  } else {
+    const rect = container;
+    rect.fills = [{
+      type: "IMAGE",
+      scaleMode: "FIT",
+      imageHash: image.hash
+    }];
+    rect.strokes = [];
+    rect.resizeWithoutConstraints(Math.max(1, targetWidth), Math.max(1, targetHeight));
+  }
+
+  if (!updatingExisting && sourceNode && sourceNode.parent && sourceNode.parent.type !== "DOCUMENT") {
+    const parent = sourceNode.parent;
+    const index = getChildIndex(parent, sourceNode);
+    parent.insertChild(index >= 0 ? index + 1 : parent.children.length, container);
+    container.x = sourceNode.x;
+    container.y = sourceNode.y;
+  } else if (!updatingExisting) {
+    figma.currentPage.appendChild(container);
+    container.x = figma.viewport.center.x - targetWidth / 2;
+    container.y = figma.viewport.center.y - targetHeight / 2;
+  }
+
+  writeThreeDRenderData(container, payload);
+  figma.currentPage.selection = [container];
+  figma.notify(updatingExisting ? "3D render updated." : "3D render placed on canvas.");
+}
+
+function applyThreeDImageFill(node, imageHash) {
+  node.fills = [{
+    type: "IMAGE",
+    scaleMode: "FIT",
+    imageHash: imageHash
+  }];
+  node.strokes = [];
+}
+
+function ensureThreeDFrameChild(frame, role) {
+  const targetName = role === "Bloom" ? "Bloom Flare" : "Base Render";
+  const existing = frame.children.find((child) => child.type === "RECTANGLE" && child.name === targetName);
+  if (existing) return existing;
+  const rect = figma.createRectangle();
+  rect.name = targetName;
+  frame.appendChild(rect);
+  return rect;
+}
+
+function convertThreeDRenderToFrame(node, width, height) {
+  const frame = figma.createFrame();
+  frame.name = node.name;
+  frame.fills = [];
+  frame.strokes = [];
+  frame.clipsContent = false;
+  frame.resizeWithoutConstraints(Math.max(1, width), Math.max(1, height));
+  frame.x = node.x;
+  frame.y = node.y;
+  if (node.parent && node.parent.type !== "DOCUMENT") {
+    const parent = node.parent;
+    const index = getChildIndex(parent, node);
+    parent.insertChild(index >= 0 ? index : parent.children.length, frame);
+    frame.x = node.x;
+    frame.y = node.y;
+    parent.removeChild(node);
+  } else {
+    figma.currentPage.appendChild(frame);
+    frame.x = node.x;
+    frame.y = node.y;
+    figma.currentPage.removeChild(node);
+  }
+  return frame;
+}
+
+async function sendNodeAsThreeDSource(node, fromRender, renderNodeId) {
+  try {
+    const svgBytes = await node.exportAsync({
+      format: "SVG",
+      contentsOnly: true,
+      useAbsoluteBounds: true,
+      svgOutlineText: true,
+      svgSimplifyStroke: false
+    });
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: {
+        name: node.name || "3D Source",
+        nodeType: node.type,
+        width: "width" in node ? node.width : 0,
+        height: "height" in node ? node.height : 0,
+        svg: decodeUtf8Bytes(svgBytes),
+        renderNodeId: renderNodeId || "",
+        fromRender: fromRender === true,
+        sourceNodeId: node.id
+      }
+    });
+  } catch (error) {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: null,
+      error: error && error.message ? error.message : "Could not export the selected object as SVG."
+    });
+  }
+}
+
+function isThreeDRenderNode(node) {
+  return Boolean(node && (node.type === "RECTANGLE" || node.type === "FRAME" || node.type === "ELLIPSE" || node.type === "POLYGON" || node.type === "STAR" || node.type === "VECTOR") && node.getSharedPluginData(DATA_NAMESPACE, DATA_KIND) === KIND_THREE_RENDER);
+}
+
+function readThreeDRenderSource(node) {
+  const sourceRaw = node.getSharedPluginData(DATA_NAMESPACE, DATA_THREE_SOURCE);
+  const metaRaw = node.getSharedPluginData(DATA_NAMESPACE, DATA_THREE_META);
+  let meta = {};
+  try {
+    meta = metaRaw ? JSON.parse(metaRaw) : {};
+  } catch (_error) {
+    meta = {};
+  }
+  return {
+    name: meta.name || node.name.replace(/\sRender$/, ""),
+    nodeType: meta.nodeType || "RENDER",
+    width: "width" in node ? node.width : meta.width || 0,
+    height: "height" in node ? node.height : meta.height || 0,
+    svg: sourceRaw || "",
+    mode: meta.mode || "extrude",
+    settings: meta.settings || null,
+    renderNodeId: node.id,
+    fromRender: true,
+    sourceNodeId: meta.sourceNodeId || ""
+  };
+}
+
+function writeThreeDRenderData(node, payload) {
+  node.setSharedPluginData(DATA_NAMESPACE, DATA_KIND, KIND_THREE_RENDER);
+  node.setSharedPluginData(DATA_NAMESPACE, DATA_THREE_SOURCE, String(payload && payload.svgSource || ""));
+  node.setSharedPluginData(DATA_NAMESPACE, DATA_THREE_META, JSON.stringify({
+    name: payload && payload.name ? payload.name : "3D Object",
+    nodeType: payload && payload.nodeType ? payload.nodeType : "RENDER",
+    width: payload && payload.width ? payload.width : ("width" in node ? node.width : 0),
+    height: payload && payload.height ? payload.height : ("height" in node ? node.height : 0),
+    mode: payload && payload.mode ? payload.mode : "extrude",
+    settings: payload && payload.settings ? payload.settings : {},
+    sourceNodeId: payload && payload.sourceNodeId ? payload.sourceNodeId : ""
+  }));
+}
+
+function decodeUtf8Bytes(bytes) {
+  if (typeof TextDecoder !== "undefined") {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+
+  let result = "";
+  for (let index = 0; index < bytes.length; index++) {
+    result += String.fromCharCode(bytes[index]);
+  }
+  return result;
+}
+
+function decodeBase64Png(dataUrl) {
+  const raw = String(dataUrl || "");
+  const comma = raw.indexOf(",");
+  const base64 = comma >= 0 ? raw.slice(comma + 1) : raw;
+  if (!base64) return null;
+  return base64ToBytes(base64);
+}
+
+function base64ToBytes(base64) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const cleaned = String(base64).replace(/[^A-Za-z0-9+/=]/g, "");
+  const output = [];
+  let buffer = 0;
+  let bits = 0;
+
+  for (let index = 0; index < cleaned.length; index++) {
+    const char = cleaned.charAt(index);
+    if (char === "=") break;
+    const value = alphabet.indexOf(char);
+    if (value < 0) continue;
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      output.push(buffer >> bits & 255);
+    }
+  }
+
+  return new Uint8Array(output);
 }
 
 async function renderAppearance(group, stack) {
@@ -2304,10 +3365,17 @@ function warpRound(n) {
   return Math.round(n * 100) / 100;
 }
 
+const OBJECT_PATH_SAMPLE_STEPS = 8;
+const OBJECT_PATH_MAX_INPUT_POINTS = 1200;
+const OBJECT_PATH_MAX_OUTPUT_POINTS = 1800;
+const OBJECT_PATH_MAX_SMOOTH_ITERATIONS = 4;
+let objectPathPreviewSession = null;
+let lastObjectPathDebug = null;
+
 async function simplifySelectedPath(tolerance) {
   const node = selectedVectorNode();
   if (!node) return;
-  const amount = clampNumber(tolerance, 0.1, 50, 2);
+  const amount = clampNumber(tolerance, 0, 100, 50);
   const result = transformVectorPathData(node, function (points, closed) {
     return simplifyPathPoints(points, amount, closed);
   });
@@ -2317,11 +3385,85 @@ async function simplifySelectedPath(tolerance) {
 async function smoothSelectedPath(amount) {
   const node = selectedVectorNode();
   if (!node) return;
-  const iterations = Math.round(clampNumber(amount, 1, 8, 2));
+  const strength = clampNumber(amount, 0, 100, 50);
   const result = transformVectorPathData(node, function (points, closed) {
-    return smoothPathPoints(points, iterations, closed);
+    return smoothPathPoints(points, strength, closed);
   });
   if (result) figma.notify("Path smoothed.");
+}
+
+async function startObjectPathPreview(tool, value) {
+  const node = selectedVectorNode();
+  if (!node) return false;
+  lastObjectPathDebug = null;
+  objectPathPreviewSession = {
+    nodeId: node.id,
+    tool: tool,
+    originalVectorPaths: cloneVectorPaths(node.vectorPaths || [])
+  };
+  return await updateObjectPathPreview(value);
+}
+
+async function updateObjectPathPreview(value) {
+  if (!objectPathPreviewSession) return false;
+  const node = await figma.getNodeByIdAsync(objectPathPreviewSession.nodeId);
+  if (!node || !("vectorPaths" in node)) {
+    objectPathPreviewSession = null;
+    lastObjectPathDebug = {
+      tool: "",
+      message: "Preview node was not found."
+    };
+    return false;
+  }
+  const transformed = transformVectorPaths(
+    objectPathPreviewSession.originalVectorPaths,
+    createObjectPathTransformer(objectPathPreviewSession.tool, value)
+  );
+  lastObjectPathDebug = buildObjectPathDebug(
+    objectPathPreviewSession.tool,
+    value,
+    transformed ? transformed.debugEntries : [],
+    transformed ? transformed.changed : false
+  );
+  if (!transformed || !transformed.changed) return false;
+  try {
+    node.vectorPaths = transformed.vectorPaths;
+    return true;
+  } catch (_error) {
+    lastObjectPathDebug.message = "Figma rejected the transformed vectorPaths.";
+    return false;
+  }
+}
+
+function commitObjectPathPreview() {
+  objectPathPreviewSession = null;
+  if (lastObjectPathDebug) lastObjectPathDebug.message = "Applied current preview.";
+}
+
+async function cancelObjectPathPreview() {
+  if (!objectPathPreviewSession) return false;
+  const node = await figma.getNodeByIdAsync(objectPathPreviewSession.nodeId);
+  if (!node || !("vectorPaths" in node)) {
+    objectPathPreviewSession = null;
+    return false;
+  }
+  try {
+    node.vectorPaths = cloneVectorPaths(objectPathPreviewSession.originalVectorPaths);
+    objectPathPreviewSession = null;
+    if (lastObjectPathDebug) lastObjectPathDebug.message = "Preview cancelled and original path restored.";
+    return true;
+  } catch (_error) {
+    objectPathPreviewSession = null;
+    lastObjectPathDebug = {
+      tool: "",
+      message: "Could not restore original path."
+    };
+    return false;
+  }
+}
+
+function readObjectPathDebug() {
+  return lastObjectPathDebug;
 }
 
 function selectedVectorNode() {
@@ -2339,21 +3481,35 @@ function selectedVectorNode() {
 }
 
 function transformVectorPathData(node, transformPoints) {
+  const transformed = transformVectorPaths(node.vectorPaths, transformPoints);
+  if (!transformed || !transformed.changed) return false;
+  try {
+    node.vectorPaths = transformed.vectorPaths;
+    return true;
+  } catch (_error) {
+    figma.notify("Could not update this path.");
+    return false;
+  }
+}
+
+function transformVectorPaths(vectorPaths, transformPoints) {
   const nextPaths = [];
   let changed = false;
-  for (let pathIndex = 0; pathIndex < node.vectorPaths.length; pathIndex++) {
-    const vectorPath = node.vectorPaths[pathIndex];
+  const debugEntries = [];
+  for (let pathIndex = 0; pathIndex < vectorPaths.length; pathIndex++) {
+    const vectorPath = vectorPaths[pathIndex];
     const subpaths = vectorPathToPointSubpaths(vectorPath.data);
     if (!subpaths.length) {
-      nextPaths.push(vectorPath);
+      nextPaths.push(cloneVectorPath(vectorPath));
       continue;
     }
     const pathParts = [];
     for (let subIndex = 0; subIndex < subpaths.length; subIndex++) {
       const subpath = subpaths[subIndex];
-      const points = transformPoints(subpath.points, subpath.closed);
-      if (points.length >= 2) {
-        pathParts.push(pathPointsToSvgData(points, subpath.closed));
+      const transformed = normalizeTransformedSubpath(transformPoints(subpath.points, subpath.closed), subpath.closed);
+      debugEntries.push(describeSubpathTransform(subpath, transformed, pathIndex, subIndex));
+      if (transformed.points.length >= 2) {
+        pathParts.push(pathDataFromTransformedSubpath(transformed));
         changed = true;
       }
     }
@@ -2362,18 +3518,60 @@ function transformVectorPathData(node, transformPoints) {
       data: pathParts.join(" ")
     });
   }
-  if (!changed) return false;
-  try {
-    node.vectorPaths = nextPaths;
-    return true;
-  } catch (_error) {
-    figma.notify("Could not update this path.");
-    return false;
+  return {
+    changed: changed,
+    vectorPaths: nextPaths,
+    debugEntries: debugEntries
+  };
+}
+
+function normalizeTransformedSubpath(value, closed) {
+  if (Array.isArray(value)) {
+    return {
+      points: value,
+      closed: closed,
+      output: "lines",
+      handleScale: 1 / 6,
+      cornerDamping: 0.72,
+      cornerCutoff: 0.92
+    };
   }
+  return {
+    points: Array.isArray(value.points) ? value.points : [],
+    curves: Array.isArray(value.curves) ? value.curves : [],
+    closed: value.closed === undefined ? closed : value.closed,
+    output: value.output || "lines",
+    handleScale: value.handleScale === undefined ? 1 / 6 : value.handleScale,
+    cornerDamping: value.cornerDamping === undefined ? 0.72 : value.cornerDamping,
+    cornerCutoff: value.cornerCutoff === undefined ? 0.92 : value.cornerCutoff
+  };
+}
+
+function pathDataFromTransformedSubpath(subpath) {
+  if (subpath.output === "fit-curves") {
+    return fitCurvesToSvgPath(subpath.curves, subpath.closed);
+  }
+  if (subpath.output === "cubic") {
+    return cubicPathDataFromPoints(subpath.points, subpath.closed, subpath);
+  }
+  return pathPointsToSvgData(subpath.points, subpath.closed);
+}
+
+function createObjectPathTransformer(tool, value) {
+  if (tool === "simplify") {
+    const amount = clampNumber(value, 0, 100, 50);
+    return function (points, closed) {
+      return simplifyPathPoints(points, amount, closed);
+    };
+  }
+  const strength = clampNumber(value, 0, 100, 50);
+  return function (points, closed) {
+    return smoothPathPoints(points, strength, closed);
+  };
 }
 
 function vectorPathToPointSubpaths(data) {
-  const sampled = sampleSvgPath(data, 10);
+  const sampled = sampleSvgPath(data, OBJECT_PATH_SAMPLE_STEPS);
   const subpaths = [];
   let current = null;
   for (let index = 0; index < sampled.length; index++) {
@@ -2389,48 +3587,44 @@ function vectorPathToPointSubpaths(data) {
     }
   }
   if (current && current.points.length) subpaths.push(current);
+  for (let subIndex = 0; subIndex < subpaths.length; subIndex++) {
+    subpaths[subIndex].points = limitPathPointCount(subpaths[subIndex].points, OBJECT_PATH_MAX_INPUT_POINTS, subpaths[subIndex].closed);
+  }
   return subpaths;
 }
 
 function simplifyPathPoints(points, tolerance, closed) {
   if (points.length <= 2) return points.slice();
-  const work = removeDuplicatePathPoints(points);
+  const work = limitPathPointCount(removeDuplicatePathPoints(points), OBJECT_PATH_MAX_INPUT_POINTS, closed);
   if (work.length <= 2) return work;
-  if (!closed) return rdpSimplify(work, tolerance);
-  const opened = work.slice();
-  opened.push(work[0]);
-  const simplified = rdpSimplify(opened, tolerance);
-  if (simplified.length > 1 && samePathPoint(simplified[0], simplified[simplified.length - 1])) simplified.pop();
-  return simplified.length >= 3 ? simplified : work;
+  const pathTolerance = simplifyToleranceForPoints(work, tolerance);
+  if (pathTolerance <= 0.001) {
+    return fitCurveSubpathFromPoints(work, closed, 1.5);
+  }
+  const simplified = simplifyPolylinePoints(work, pathTolerance, closed);
+  return fitCurveSubpathFromPoints(simplified, closed, Math.max(1.5, pathTolerance * 0.9));
 }
 
-function smoothPathPoints(points, iterations, closed) {
-  let result = removeDuplicatePathPoints(points);
+function smoothPathPoints(points, amount, closed) {
+  const original = limitPathPointCount(removeDuplicatePathPoints(points), OBJECT_PATH_MAX_INPUT_POINTS, closed);
+  if (original.length <= 2) return original;
+  const strength = clampNumber(amount, 0, 100, 50);
+  if (strength <= 0) return original.slice();
+  const normalized = strength / 100;
+  const iterations = Math.min(OBJECT_PATH_MAX_SMOOTH_ITERATIONS + 6, Math.max(1, Math.round(2 + normalized * 6)));
+  const alpha = 0.24 + 0.52 * normalized;
+  let result = original.slice();
   for (let index = 0; index < iterations; index++) {
-    result = chaikinSmooth(result, closed);
+    result = smoothPointSetOnce(result, closed, alpha);
+    if (normalized >= 0.08) {
+      result = straightenPointSetOnce(result, closed, 0.1 + normalized * 0.42);
+    }
+    if (result.length <= 2) break;
   }
-  return result;
-}
-
-function chaikinSmooth(points, closed) {
-  if (points.length < 3) return points.slice();
-  const result = [];
-  if (!closed) result.push(points[0]);
-  const max = closed ? points.length : points.length - 1;
-  for (let index = 0; index < max; index++) {
-    const a = points[index];
-    const b = points[(index + 1) % points.length];
-    result.push({
-      x: a.x * 0.75 + b.x * 0.25,
-      y: a.y * 0.75 + b.y * 0.25
-    });
-    result.push({
-      x: a.x * 0.25 + b.x * 0.75,
-      y: a.y * 0.25 + b.y * 0.75
-    });
-  }
-  if (!closed) result.push(points[points.length - 1]);
-  return result;
+  const simplifyTolerance = smoothToleranceForPoints(original, normalized);
+  const simplified = simplifyTolerance > 0.001 ? simplifyPolylinePoints(result, simplifyTolerance, closed) : result;
+  const fitError = Math.max(1.2, simplifyTolerance * 0.65);
+  return fitCurveSubpathFromPoints(simplified, closed, fitError);
 }
 
 function rdpSimplify(points, tolerance) {
@@ -2481,6 +3675,456 @@ function pathPointDistance(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function simplifyToleranceForPoints(points, amount) {
+  const bounds = pointBounds(points);
+  const diagonal = Math.sqrt(bounds.width * bounds.width + bounds.height * bounds.height);
+  const precision = Math.max(0, Math.min(1, amount / 100));
+  const reduction = 1 - precision;
+  if (reduction <= 0.001) return 0;
+  return diagonal * reduction * reduction * 0.12;
+}
+
+function pointBounds(points) {
+  if (!points.length) {
+    return { width: 0, height: 0, minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+  let minX = points[0].x;
+  let maxX = points[0].x;
+  let minY = points[0].y;
+  let maxY = points[0].y;
+  for (let index = 1; index < points.length; index++) {
+    const point = points[index];
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+  }
+  return {
+    minX: minX,
+    minY: minY,
+    maxX: maxX,
+    maxY: maxY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
+}
+
+function limitPathPointCount(points, maxPoints, closed) {
+  if (!Array.isArray(points) || points.length <= maxPoints) return points.slice();
+  const safeMax = Math.max(closed ? 3 : 2, maxPoints);
+  if (points.length <= safeMax) return points.slice();
+  const limited = [];
+  const lastIndex = points.length - 1;
+  const step = lastIndex / (safeMax - 1);
+  for (let index = 0; index < safeMax; index++) {
+    let sourceIndex = Math.round(index * step);
+    if (sourceIndex > lastIndex) sourceIndex = lastIndex;
+    if (!limited.length || !samePathPoint(points[sourceIndex], limited[limited.length - 1])) {
+      limited.push(points[sourceIndex]);
+    }
+  }
+  if (closed && limited.length >= 2 && samePathPoint(limited[0], limited[limited.length - 1])) limited.pop();
+  return limited;
+}
+
+function ensureMinimumPathPoints(points, fallback, closed) {
+  const minimum = closed ? 3 : 2;
+  if (points.length >= minimum) return points;
+  return fallback.slice();
+}
+
+function resamplePathPoints(points, targetCount, closed) {
+  if (targetCount <= 0 || points.length <= 1) return points.slice();
+  if (points.length === targetCount) return points.slice();
+  const source = closed ? points.concat([points[0]]) : points.slice();
+  const lengths = [0];
+  for (let index = 1; index < source.length; index++) {
+    lengths[index] = lengths[index - 1] + pathPointDistance(source[index - 1], source[index]);
+  }
+  const total = lengths[lengths.length - 1];
+  if (total <= 0.001) return limitPathPointCount(points, targetCount, closed);
+  const result = [];
+  const steps = closed ? targetCount : Math.max(1, targetCount - 1);
+  for (let index = 0; index < targetCount; index++) {
+    const distance = closed ? total * index / targetCount : total * index / steps;
+    result.push(pointAtPathDistance(source, lengths, distance));
+  }
+  return result;
+}
+
+function pointAtPathDistance(points, lengths, distance) {
+  if (distance <= 0) return clonePathPoint(points[0]);
+  const lastIndex = lengths.length - 1;
+  if (distance >= lengths[lastIndex]) return clonePathPoint(points[lastIndex]);
+  for (let index = 1; index < lengths.length; index++) {
+    if (distance > lengths[index]) continue;
+    const span = lengths[index] - lengths[index - 1];
+    const t = span <= 0 ? 0 : (distance - lengths[index - 1]) / span;
+    return {
+      x: points[index - 1].x + (points[index].x - points[index - 1].x) * t,
+      y: points[index - 1].y + (points[index].y - points[index - 1].y) * t
+    };
+  }
+  return clonePathPoint(points[lastIndex]);
+}
+
+function smoothPointSetOnce(points, closed, alpha) {
+  if (points.length < 3) return points.slice();
+  const result = points.map(function (point) {
+    return clonePathPoint(point);
+  });
+  const startIndex = closed ? 0 : 1;
+  const endIndex = closed ? points.length : points.length - 1;
+  for (let index = startIndex; index < endIndex; index++) {
+    const prev = points[(index - 1 + points.length) % points.length];
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const cornerFactor = pathCornerFactor(prev, current, next);
+    const averaged = {
+      x: prev.x * 0.25 + current.x * 0.5 + next.x * 0.25,
+      y: prev.y * 0.25 + current.y * 0.5 + next.y * 0.25
+    };
+    const tangent = normalizePathVector({
+      x: next.x - prev.x,
+      y: next.y - prev.y
+    });
+    const normal = {
+      x: -tangent.y,
+      y: tangent.x
+    };
+    const delta = {
+      x: averaged.x - current.x,
+      y: averaged.y - current.y
+    };
+    const normalOffset = dotPathVector(delta, normal);
+    const tangentOffset = dotPathVector(delta, tangent);
+    const localAlpha = alpha * (0.35 + cornerFactor * 0.65);
+    result[index] = {
+      x: current.x + delta.x * localAlpha * 0.88 + normal.x * normalOffset * localAlpha * 0.35 + tangent.x * tangentOffset * localAlpha * 0.1,
+      y: current.y + delta.y * localAlpha * 0.88 + normal.y * normalOffset * localAlpha * 0.35 + tangent.y * tangentOffset * localAlpha * 0.1
+    };
+  }
+  return result;
+}
+
+function straightenPointSetOnce(points, closed, amount) {
+  if (points.length < 3) return points.slice();
+  const result = points.map(function (point) {
+    return clonePathPoint(point);
+  });
+  const startIndex = closed ? 0 : 1;
+  const endIndex = closed ? points.length : points.length - 1;
+  for (let index = startIndex; index < endIndex; index++) {
+    const prev = points[(index - 1 + points.length) % points.length];
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const projected = projectPointToLine(current, prev, next);
+    const midpoint = {
+      x: (prev.x + next.x) * 0.5,
+      y: (prev.y + next.y) * 0.5
+    };
+    const target = {
+      x: projected.x * 0.72 + midpoint.x * 0.28,
+      y: projected.y * 0.72 + midpoint.y * 0.28
+    };
+    const cornerWeight = 0.28 + pathCornerFactor(prev, current, next) * 0.72;
+    result[index] = {
+      x: current.x + (target.x - current.x) * amount * cornerWeight,
+      y: current.y + (target.y - current.y) * amount * cornerWeight
+    };
+  }
+  return result;
+}
+
+function pathCornerFactor(prev, current, next) {
+  const ax = current.x - prev.x;
+  const ay = current.y - prev.y;
+  const bx = next.x - current.x;
+  const by = next.y - current.y;
+  const aLen = Math.sqrt(ax * ax + ay * ay);
+  const bLen = Math.sqrt(bx * bx + by * by);
+  if (aLen <= 0.001 || bLen <= 0.001) return 0;
+  const cos = Math.max(-1, Math.min(1, (ax * bx + ay * by) / (aLen * bLen)));
+  return Math.max(0, Math.min(1, (1 - cos) / 2));
+}
+
+function smoothToleranceForPoints(points, normalized) {
+  const bounds = pointBounds(points);
+  const diagonal = Math.sqrt(bounds.width * bounds.width + bounds.height * bounds.height);
+  return diagonal * normalized * normalized * 0.06;
+}
+
+function simplifyPolylinePoints(points, tolerance, closed) {
+  let work = points.slice();
+  if (closed) {
+    work = ensureClosedPolyline(points);
+  }
+  const simplified = simplifyPathLib(work, tolerance, true);
+  if (closed) {
+    const opened = simplified.slice();
+    if (opened.length > 1 && samePathPoint(opened[0], opened[opened.length - 1])) opened.pop();
+    return ensureMinimumPathPoints(opened, points, true);
+  }
+  return ensureMinimumPathPoints(simplified, points, false);
+}
+
+function fitCurveSubpathFromPoints(points, closed, error) {
+  const safePoints = limitPathPointCount(removeDuplicatePathPoints(points), OBJECT_PATH_MAX_OUTPUT_POINTS, closed);
+  const minimum = closed ? 3 : 2;
+  if (safePoints.length < minimum) {
+    return {
+      points: points.slice(),
+      curves: [],
+      closed: closed,
+      output: "lines"
+    };
+  }
+  let fitPoints = safePoints.slice();
+  if (closed) fitPoints = ensureClosedPolyline(safePoints);
+  const fitInput = fitPoints.map(function (point) {
+    return [point.x, point.y];
+  });
+  try {
+    const curves = fitCurve(fitInput, error);
+    if (!curves || !curves.length) {
+      return {
+        points: safePoints,
+        curves: [],
+        closed: closed,
+        output: "lines"
+      };
+    }
+    return {
+      points: closed && fitPoints.length > 1 ? fitPoints.slice(0, fitPoints.length - 1) : fitPoints,
+      curves: curves,
+      closed: closed,
+      output: "fit-curves"
+    };
+  } catch (_error) {
+    return {
+      points: safePoints,
+      curves: [],
+      closed: closed,
+      output: "lines"
+    };
+  }
+}
+
+function ensureClosedPolyline(points) {
+  const result = points.slice();
+  if (!result.length) return result;
+  if (!samePathPoint(result[0], result[result.length - 1])) {
+    result.push(clonePathPoint(result[0]));
+  }
+  return result;
+}
+
+function projectPointToLine(point, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const lengthSq = abx * abx + aby * aby;
+  if (lengthSq <= 0.00001) return clonePathPoint(point);
+  const t = ((point.x - a.x) * abx + (point.y - a.y) * aby) / lengthSq;
+  return {
+    x: a.x + abx * t,
+    y: a.y + aby * t
+  };
+}
+
+function fitCurvesToSvgPath(curves, closed) {
+  if (!curves || !curves.length) return "";
+  const first = curves[0][0];
+  const parts = ["M " + objectPathRound(first[0]) + " " + objectPathRound(first[1])];
+  for (let index = 0; index < curves.length; index++) {
+    const curve = curves[index];
+    parts.push(
+      "C " +
+      objectPathRound(curve[1][0]) + " " + objectPathRound(curve[1][1]) + " " +
+      objectPathRound(curve[2][0]) + " " + objectPathRound(curve[2][1]) + " " +
+      objectPathRound(curve[3][0]) + " " + objectPathRound(curve[3][1])
+    );
+  }
+  if (closed) parts.push("Z");
+  return parts.join(" ");
+}
+
+function cubicPathDataFromPoints(points, closed, options) {
+  if (!points.length) return "";
+  if (points.length < 3) return pathPointsToSvgData(points, closed);
+  const handleScaleBase = options && options.handleScale !== undefined ? options.handleScale : 1 / 6;
+  const cornerDamping = options && options.cornerDamping !== undefined ? options.cornerDamping : 0.72;
+  const cornerCutoff = options && options.cornerCutoff !== undefined ? options.cornerCutoff : 0.92;
+  const parts = ["M " + objectPathRound(points[0].x) + " " + objectPathRound(points[0].y)];
+  if (closed) {
+    for (let index = 0; index < points.length; index++) {
+      const prev = points[(index - 1 + points.length) % points.length];
+      const current = points[index];
+      const next = points[(index + 1) % points.length];
+      const after = points[(index + 2) % points.length];
+      const currentCorner = pathCornerFactor(prev, current, next);
+      const nextCorner = pathCornerFactor(current, next, after);
+      const currentScale = handleScaleBase * (1 - currentCorner * cornerDamping);
+      const nextScale = handleScaleBase * (1 - nextCorner * cornerDamping);
+      const cp1 = {
+        x: current.x + (next.x - prev.x) * currentScale,
+        y: current.y + (next.y - prev.y) * currentScale
+      };
+      const cp2 = {
+        x: next.x - (after.x - current.x) * nextScale,
+        y: next.y - (after.y - current.y) * nextScale
+      };
+      if (pathCornerFactor(prev, current, next) > cornerCutoff) {
+        parts.push("L " + objectPathRound(next.x) + " " + objectPathRound(next.y));
+        continue;
+      }
+      parts.push(
+        "C " +
+        objectPathRound(cp1.x) + " " + objectPathRound(cp1.y) + " " +
+        objectPathRound(cp2.x) + " " + objectPathRound(cp2.y) + " " +
+        objectPathRound(next.x) + " " + objectPathRound(next.y)
+      );
+    }
+    parts.push("Z");
+    return parts.join(" ");
+  }
+  for (let index = 0; index < points.length - 1; index++) {
+    const prev = index === 0 ? points[index] : points[index - 1];
+    const current = points[index];
+    const next = points[index + 1];
+    const after = index + 2 >= points.length ? points[index + 1] : points[index + 2];
+    const currentCorner = index === 0 ? 0 : pathCornerFactor(prev, current, next);
+    const nextCorner = index + 1 >= points.length - 1 ? 0 : pathCornerFactor(current, next, after);
+    const currentScale = handleScaleBase * (1 - currentCorner * cornerDamping);
+    const nextScale = handleScaleBase * (1 - nextCorner * cornerDamping);
+    const cp1 = {
+      x: current.x + (next.x - prev.x) * currentScale,
+      y: current.y + (next.y - prev.y) * currentScale
+    };
+    const cp2 = {
+      x: next.x - (after.x - current.x) * nextScale,
+      y: next.y - (after.y - current.y) * nextScale
+    };
+    if (Math.max(currentCorner, nextCorner) > cornerCutoff) {
+      parts.push("L " + objectPathRound(next.x) + " " + objectPathRound(next.y));
+      continue;
+    }
+    parts.push(
+      "C " +
+      objectPathRound(cp1.x) + " " + objectPathRound(cp1.y) + " " +
+      objectPathRound(cp2.x) + " " + objectPathRound(cp2.y) + " " +
+      objectPathRound(next.x) + " " + objectPathRound(next.y)
+    );
+  }
+  return parts.join(" ");
+}
+
+function cloneVectorPaths(vectorPaths) {
+  return (vectorPaths || []).map(function (vectorPath) {
+    return cloneVectorPath(vectorPath);
+  });
+}
+
+function cloneVectorPath(vectorPath) {
+  return {
+    windingRule: vectorPath.windingRule || "NONZERO",
+    data: vectorPath.data || ""
+  };
+}
+
+function clonePathPoint(point) {
+  return { x: point.x, y: point.y };
+}
+
+function normalizePathVector(vector) {
+  const length = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
+  if (length <= 0.00001) {
+    return { x: 1, y: 0 };
+  }
+  return {
+    x: vector.x / length,
+    y: vector.y / length
+  };
+}
+
+function dotPathVector(a, b) {
+  return a.x * b.x + a.y * b.y;
+}
+
+function describeSubpathTransform(original, transformed, pathIndex, subIndex) {
+  const before = original.points || [];
+  const after = transformed.points || [];
+  const count = Math.min(before.length, after.length);
+  let maxDelta = 0;
+  let totalDelta = 0;
+  for (let index = 0; index < count; index++) {
+    const delta = pathPointDistance(before[index], after[index]);
+    totalDelta += delta;
+    if (delta > maxDelta) maxDelta = delta;
+  }
+  const beforeBounds = pointBounds(before);
+  const afterBounds = pointBounds(after);
+  return {
+    pathIndex: pathIndex,
+    subIndex: subIndex,
+    beforeCount: before.length,
+    afterCount: after.length,
+    maxDelta: maxDelta,
+    avgDelta: count ? totalDelta / count : 0,
+    beforeBounds: beforeBounds,
+    afterBounds: afterBounds,
+    output: transformed.output || "lines"
+  };
+}
+
+function buildObjectPathDebug(tool, value, entries, changed) {
+  const summary = {
+    tool: tool,
+    value: value,
+    changed: changed,
+    pathCount: entries.length,
+    beforeCount: 0,
+    afterCount: 0,
+    maxDelta: 0,
+    avgDelta: 0,
+    output: "",
+    beforeBounds: null,
+    afterBounds: null,
+    message: changed ? "Geometry changed." : "No geometry change detected."
+  };
+  if (!entries.length) {
+    summary.message = "No subpaths were sampled from the current vector path.";
+    return summary;
+  }
+  let deltaSum = 0;
+  let deltaSamples = 0;
+  const beforePoints = [];
+  const afterPoints = [];
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    summary.beforeCount += entry.beforeCount;
+    summary.afterCount += entry.afterCount;
+    if (entry.maxDelta > summary.maxDelta) summary.maxDelta = entry.maxDelta;
+    deltaSum += entry.avgDelta * Math.max(1, Math.min(entry.beforeCount, entry.afterCount));
+    deltaSamples += Math.max(1, Math.min(entry.beforeCount, entry.afterCount));
+    if (!summary.output) summary.output = entry.output;
+    beforePoints.push({ x: entry.beforeBounds.minX, y: entry.beforeBounds.minY });
+    beforePoints.push({ x: entry.beforeBounds.maxX, y: entry.beforeBounds.maxY });
+    afterPoints.push({ x: entry.afterBounds.minX, y: entry.afterBounds.minY });
+    afterPoints.push({ x: entry.afterBounds.maxX, y: entry.afterBounds.maxY });
+  }
+  summary.avgDelta = deltaSamples ? deltaSum / deltaSamples : 0;
+  summary.beforeBounds = pointBounds(beforePoints);
+  summary.afterBounds = pointBounds(afterPoints);
+  if (summary.maxDelta < 0.01 && summary.beforeCount === summary.afterCount) {
+    summary.message = "Path is effectively unchanged. Smooth is not moving sampled points enough.";
+  } else if (summary.maxDelta < 0.01) {
+    summary.message = "Point count changed, but coordinates barely moved.";
+  } else if (summary.beforeCount !== summary.afterCount) {
+    summary.message = "Point count changed and geometry moved.";
+  }
+  return summary;
 }
 
 function pathPointsToSvgData(points, closed) {
@@ -3593,7 +5237,7 @@ function crc32(data) {
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-figma.showUI(__html__, { width: 360, height: 620, themeColors: true });
+figma.showUI(__html__, { width: 460, height: 760, themeColors: true });
 
 let availableFonts = [];
 
@@ -3618,6 +5262,25 @@ figma.ui.onmessage = async (message) => {
 
     if (message.type === "close-plugin") {
       figma.closePlugin();
+    }
+
+    if (message.type === "resize-ui") {
+      const width = clampNumber(message.width, 280, 1200, 460);
+      const height = clampNumber(message.height, 240, 1200, 760);
+      figma.ui.resize(width, height);
+    }
+
+    if (message.type === "request-3d-source") {
+      await sendThreeDSource();
+    }
+
+    if (message.type === "request-3d-source-by-id") {
+      await sendThreeDSourceById(message.nodeId || "", message.renderNodeId || "");
+    }
+
+    if (message.type === "place-3d-render") {
+      await placeThreeDRender(message);
+      sendSelectionState();
     }
 
     if (message.type === "update-text") {
@@ -3749,6 +5412,26 @@ figma.ui.onmessage = async (message) => {
 
     if (message.type === "smooth-path") {
       await smoothSelectedPath(message.amount);
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-start") {
+      await startObjectPathPreview(message.tool, message.value);
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-update") {
+      await updateObjectPathPreview(message.value);
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-commit") {
+      commitObjectPathPreview();
+      sendSelectionState();
+    }
+
+    if (message.type === "object-path-preview-cancel") {
+      await cancelObjectPathPreview();
       sendSelectionState();
     }
 
@@ -3994,7 +5677,8 @@ function sendSelectionState() {
     isBlend: Boolean(blendGroup),
     blendName: blendGroup ? blendGroup.name : "",
     blendOptions: blendGroup ? readBlendOptions(blendGroup) : createBlendOptions(),
-    swatches: savedSwatches
+    swatches: savedSwatches,
+    objectPathDebug: readObjectPathDebug()
   });
 }
 
