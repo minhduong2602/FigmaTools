@@ -249,12 +249,12 @@ onmessage = function (event) {
 
 function requestUiResizeForTab(tab) {
   if (tab === "three-d") {
-    post({ type: "resize-ui", width: 560, height: 820 });
+    post({ type: "resize-ui", width: 720, height: 760 });
     return;
   }
   if (tab === "appearance") {
-    post({ type: "resize-ui", width: 460, height: 760 });
+    post({ type: "resize-ui", width: 560, height: 760 });
     return;
   }
-  post({ type: "resize-ui", width: 440, height: 720 });
+  post({ type: "resize-ui", width: 560, height: 720 });
 }

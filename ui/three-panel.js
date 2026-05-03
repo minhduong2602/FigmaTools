@@ -68,130 +68,32 @@ function threeDPanelTemplate() {
     ? escapeHtml(source.nodeType + " - " + Math.round(source.width) + " x " + Math.round(source.height))
     : (threeDState.requestPending ? "Loading source" : (threeDState.error ? escapeHtml(threeDState.error) : "Select one object and refresh."));
   return [
-    '<div class="three-d-layout three-d-split-layout">',
-    '<div class="three-d-preview-shell">',
-    '<div class="three-d-preview-head"><span>Preview</span><span class="muted">' + sourceSummary + '</span></div>',
+    '<div class="three-d-layout">',
+    '<section class="three-panel-card three-d-preview-card three-d-preview-sticky">',
+    '<div class="three-card-title">Preview</div>',
+    '<div class="three-d-preview-head"><span class="muted">' + sourceSummary + '</span></div>',
     '<div class="three-d-preview-stage" style="' + stageStyle + '"><canvas id="three-d-canvas"></canvas><img id="three-d-preview-image" class="three-d-preview-image" alt=""><div id="three-d-overlay" class="three-d-overlay"></div></div>',
-    '<div class="three-d-preview-actions three-d-panel-actions"><button class="command-btn" id="three-d-inline-export"' + (source ? "" : " disabled") + '>' + actionLabel + '</button><button class="command-btn" id="three-d-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original</button><button class="command-btn" id="three-d-open-preview"' + (source ? "" : " disabled") + '>Focus Preview</button></div>',
-    '<div class="three-d-help muted">Drag orbits X/Y. Shift + drag rolls Z. Mouse wheel zooms.</div>',
+    '<div class="three-d-help muted">Drag orbits X/Y. Shift + drag rolls Z. Scroll to zoom.</div>',
+    '<div class="three-d-preview-actions three-d-panel-actions"><button class="command-btn" id="three-d-fit-frame"' + (source ? "" : " disabled") + '>Fit</button><button class="command-btn" id="three-d-open-preview"' + (source ? "" : " disabled") + '>Focus</button><button class="command-btn" id="three-d-inline-export"' + (source ? "" : " disabled") + '>' + actionLabel + '</button></div>',
+    '</section>',
+    '<section class="three-panel-card three-d-sections-card">',
+    '<div class="three-section-tabs">',
+    threeSectionButton("effect", "Effect"),
+    threeSectionButton("camera", "Camera"),
+    threeSectionButton("material", "Material"),
     '</div>',
-    '<div class="three-d-controls">',
-    '<div class="modal-section">',
-    '<div class="modal-section-title">Effect</div>',
-    '<div class="three-mode-row">',
-    threeModeButton("extrude", "Extrude"),
-    threeModeButton("revolve", "Revolve"),
-    threeModeButton("inflate", "Inflate"),
+    '<div class="three-section-body">',
+    threeSectionContent(settings, source, relinkDisabled),
     '</div>',
-    source ? '' : '<div class="field-note">This tab renders the selected object in Three.js, then places a PNG on the canvas. Extrude works best with closed fills. Revolve works best with a side profile path.</div>',
-    '</div>',
-    '<div class="modal-section">',
-    '<div class="modal-section-title">Shape</div>',
-    threeModeFields(settings),
-    '</div>',
-    '<div class="modal-section">',
-    '<div class="modal-section-title">Camera & Light</div>',
-    '<div class="three-grid three-grid-5">',
-    threeNumberField("rotationX", "Rot X", settings.rotationX),
-    threeNumberField("rotationY", "Rot Y", settings.rotationY),
-    threeNumberField("rotationZ", "Rot Z", settings.rotationZ),
-    threeNumberField("zoom", "Zoom", settings.zoom, "120", "1200", "1"),
-    '</div>',
-    '<div class="three-grid three-grid-4">',
-    threeNumberField("offsetX", "Offset X", settings.offsetX, "-240", "240", "1"),
-    threeNumberField("offsetY", "Offset Y", settings.offsetY, "-240", "240", "1"),
-    threeNumberField("offsetZ", "Offset Z", settings.offsetZ, "-240", "240", "1"),
-    threeNumberField("framePadding", "Padding", settings.framePadding, "0", "60", "1"),
-    '</div>',
-    '<div class="three-grid three-grid-3">',
-    '<div class="field"><label>Light Preset</label><select data-three-field="lightingPreset">' + enumOptions(settings.lightingPreset, [
-      ["studio", "Studio"],
-      ["metal_booth", "Metal Booth"],
-      ["glass_clean", "Glass Clean"],
-      ["sunset", "Sunset"],
-      ["night_neon", "Night Neon"]
-    ]) + '</select></div>',
-    threeNumberField("ambient", "Ambient", settings.ambient, "0", "3", "0.05"),
-    threeNumberField("directional", "Direct", settings.directional, "0", "4", "0.05"),
-    '</div>',
-    '<div class="three-grid three-grid-3">',
-    '<div class="field"><label>HDRI / Env</label><select data-three-field="environmentPreset">' + enumOptions(settings.environmentPreset, [
-      ["studio_soft", "Studio Soft"],
-      ["chrome_booth", "Chrome Booth"],
-      ["frosted_room", "Frosted Room"],
-      ["sunset_band", "Sunset Band"],
-      ["neon_tunnel", "Neon Tunnel"],
-      ["holo_prism", "Holo Prism"]
-    ]) + '</select></div>',
-    threeNumberField("environmentStrength", "Env Strength", settings.environmentStrength, "0", "4", "0.05"),
-    '<div></div>',
-    '</div>',
-    '<div class="three-grid three-grid-3">',
-    threeNumberField("lightX", "Light X", settings.lightX, "-8", "8", "0.1"),
-    threeNumberField("lightY", "Light Y", settings.lightY, "-8", "8", "0.1"),
-    threeNumberField("lightZ", "Light Z", settings.lightZ, "-8", "8", "0.1"),
-    '</div>',
-    '</div>',
-    '<div class="modal-section">',
-    '<div class="modal-section-title">Material</div>',
-    '<div class="three-grid three-grid-3">',
-    '<div class="field"><label>Preset</label><select data-three-field="materialPreset">' + enumOptions(settings.materialPreset, [
-      ["plastic", "Plastic"],
-      ["matte", "Matte"],
-      ["metal", "Metal"],
-      ["glass", "Glass"],
-      ["frosted_glass", "Frosted Glass"],
-      ["chrome", "Chrome"],
-      ["iridescent", "Iridescent"],
-      ["holographic", "Holographic"],
-      ["neon", "Neon"],
-      ["clay", "Clay"]
-    ]) + '</select></div>',
-    '<div class="field"><label>Color</label><input type="color" data-three-field="color" value="' + settings.color + '"' + (settings.useSourceColor ? " disabled" : "") + '></div>',
-    '<div class="field"><label>Emissive</label><input type="color" data-three-field="emissive" value="' + settings.emissive + '"></div>',
-    '</div>',
-    '<div class="three-grid three-grid-4">',
-    threeNumberField("roughness", "Rough", settings.roughness, "0", "1", "0.05"),
-    threeNumberField("metalness", "Metal", settings.metalness, "0", "1", "0.05"),
-    threeNumberField("clearcoat", "Clearcoat", settings.clearcoat, "0", "1", "0.05"),
-    threeNumberField("emissiveIntensity", "Glow", settings.emissiveIntensity, "0", "4", "0.05"),
-    '</div>',
-    '<div class="three-grid three-grid-4">',
-    threeNumberField("transmission", "Transmit", settings.transmission, "0", "1", "0.05"),
-    threeNumberField("thickness", "Thickness", settings.thickness, "0", "5", "0.05"),
-    threeNumberField("opacity", "Opacity", settings.opacity, "0.05", "1", "0.05"),
-    '<div class="field"><label>Flat</label><label class="check-row"><input type="checkbox" data-three-field="flatShading"' + (settings.flatShading ? " checked" : "") + '> Shading</label></div>',
-    '</div>',
-    '<div class="three-grid three-grid-4">',
-    threeNumberField("iridescence", "Iridescence", settings.iridescence, "0", "1", "0.05"),
-    threeNumberField("iridescenceIOR", "Iri IOR", settings.iridescenceIOR, "1", "2.5", "0.05"),
-    threeNumberField("sheen", "Sheen", settings.sheen, "0", "1", "0.05"),
-    threeNumberField("sheenRoughness", "Sheen Rough", settings.sheenRoughness, "0", "1", "0.05"),
-    '</div>',
-    '<label class="check-row"><input type="checkbox" data-three-field="useSourceColor"' + (settings.useSourceColor ? " checked" : "") + '> Use source fill color when possible</label>',
-    '</div>',
-    '<div class="modal-section">',
-    '<div class="modal-section-title">Output</div>',
-    '<div class="three-grid three-grid-3">',
-    '<div class="field"><label>Background</label><input type="color" data-three-field="background" value="' + settings.background + '"' + (settings.transparentBackground ? " disabled" : "") + '></div>',
-    '<div class="field"><label>Export scale</label><input type="number" min="1" max="4" step="1" data-three-field="exportScale" value="' + settings.exportScale + '"></div>',
-    '<div></div>',
-    '</div>',
-    '<label class="check-row"><input type="checkbox" data-three-field="transparentBackground"' + (settings.transparentBackground ? " checked" : "") + '> Transparent background</label>',
-    '<div class="three-grid three-grid-4">',
-    '<div class="field"><label>Bloom</label><label class="check-row"><input type="checkbox" data-three-field="bloomEnabled"' + (settings.bloomEnabled ? " checked" : "") + '> Enabled</label></div>',
-    '<div class="field"><label>Export</label><label class="check-row"><input type="checkbox" data-three-field="bloomSeparate"' + (settings.bloomSeparate ? " checked" : "") + (settings.bloomEnabled ? "" : " disabled") + '> Separate flare</label></div>',
-    threeNumberField("bloomStrength", "Bloom Str", settings.bloomStrength, "0", "3", "0.05"),
-    threeNumberField("bloomRadius", "Bloom Rad", settings.bloomRadius, "0", "1", "0.05"),
-    threeNumberField("bloomThreshold", "Bloom Thres", settings.bloomThreshold, "0", "1", "0.05"),
-    '</div>',
-    '</div>',
-    '</div>',
+    '</section>',
     '</div>'
   ].join("");
 }
 
 function threeDStageStyle(source, large) {
+  if (!source) {
+    return "min-height:" + (large ? 280 : 180) + "px;";
+  }
   const width = source && source.width ? Number(source.width) : 240;
   const height = source && source.height ? Number(source.height) : 180;
   const ratio = Math.max(0.35, Math.min(3.5, width / Math.max(1, height)));
@@ -220,12 +122,138 @@ function threeModeButton(mode, label) {
   return '<button class="three-mode-btn' + (threeDState.mode === mode ? ' active' : '') + '" data-three-mode="' + mode + '">' + label + '</button>';
 }
 
+function threeSectionButton(section, label) {
+  return '<button class="three-section-btn' + (threeDState.section === section ? ' active' : '') + '" data-three-section="' + section + '">' + label + '</button>';
+}
+
+function threeSectionContent(settings, source, relinkDisabled) {
+  if (threeDState.section === "camera") {
+    return [
+      '<div class="three-panel-block">',
+      '<div class="three-grid three-grid-4">',
+      threeNumberField("rotationX", "Rot X", settings.rotationX),
+      threeNumberField("rotationY", "Rot Y", settings.rotationY),
+      threeNumberField("rotationZ", "Rot Z", settings.rotationZ),
+      threeNumberField("zoom", "Zoom", settings.zoom, "120", "1200", "1"),
+      '</div>',
+      '<div class="three-grid three-grid-4">',
+      threeNumberField("offsetX", "Offset X", settings.offsetX),
+      threeNumberField("offsetY", "Offset Y", settings.offsetY),
+      threeNumberField("offsetZ", "Offset Z", settings.offsetZ),
+      threeNumberField("framePadding", "Padding", settings.framePadding, "0", "60", "1"),
+      '</div>',
+      '<div class="mini-btn-row"><button type="button" class="mini-btn" id="three-d-reset-orbit"' + (source ? "" : " disabled") + '>Reset Orbit</button><button type="button" class="mini-btn" id="three-d-refresh-inline"' + (source ? "" : " disabled") + '>Refresh Source</button></div>',
+      '</div>',
+      '<div class="three-panel-block">',
+      '<div class="three-subtitle">Lighting</div>',
+      '<div class="three-grid three-grid-2">',
+      '<div class="field"><label>Light preset</label><select data-three-field="lightingPreset">' + enumOptions(settings.lightingPreset, [
+        ["studio", "Studio"],
+        ["metal_booth", "Metal Booth"],
+        ["glass_clean", "Glass Clean"],
+        ["sunset", "Sunset"],
+        ["night_neon", "Night Neon"]
+      ]) + '</select></div>',
+      '<div class="field"><label>HDRI / Env</label><select data-three-field="environmentPreset">' + enumOptions(settings.environmentPreset, [
+        ["studio_soft", "Studio Soft"],
+        ["chrome_booth", "Chrome Booth"],
+        ["frosted_room", "Frosted Room"],
+        ["sunset_band", "Sunset Band"],
+        ["neon_tunnel", "Neon Tunnel"],
+        ["holo_prism", "Holo Prism"]
+      ]) + '</select></div>',
+      '</div>',
+      '<div class="three-grid three-grid-3">',
+      threeSliderField("ambient", "Ambient", settings.ambient, "0", "3", "0.05"),
+      threeSliderField("directional", "Direct", settings.directional, "0", "4", "0.05"),
+      threeSliderField("environmentStrength", "Env", settings.environmentStrength, "0", "4", "0.05"),
+      '</div>',
+      '<div class="three-grid three-grid-3">',
+      threeNumberField("lightX", "Light X", settings.lightX, "-8", "8", "0.1"),
+      threeNumberField("lightY", "Light Y", settings.lightY, "-8", "8", "0.1"),
+      threeNumberField("lightZ", "Light Z", settings.lightZ, "-8", "8", "0.1"),
+      '</div>',
+      '</div>'
+    ].join("");
+  }
+
+  if (threeDState.section === "material") {
+    return [
+      '<div class="three-panel-block">',
+      '<div class="field"><label>Preset</label><select data-three-field="materialPreset">' + enumOptions(settings.materialPreset, [
+        ["plastic", "Plastic"],
+        ["matte", "Matte"],
+        ["metal", "Metal"],
+        ["glass", "Glass"],
+        ["frosted_glass", "Frosted Glass"],
+        ["chrome", "Chrome"],
+        ["iridescent", "Iridescent"],
+        ["holographic", "Holographic"],
+        ["neon", "Neon"],
+        ["clay", "Clay"]
+      ]) + '</select></div>',
+      '<div class="three-grid three-grid-2">',
+      threeColorField("color", "Color", settings.color, settings.useSourceColor),
+      threeColorField("emissive", "Emissive", settings.emissive, false),
+      '</div>',
+      '<div class="three-grid three-grid-4">',
+      threeSliderField("roughness", "Rough", settings.roughness, "0", "1", "0.05"),
+      threeSliderField("metalness", "Metal", settings.metalness, "0", "1", "0.05"),
+      threeSliderField("clearcoat", "Clearcoat", settings.clearcoat, "0", "1", "0.05"),
+      threeSliderField("emissiveIntensity", "Glow", settings.emissiveIntensity, "0", "4", "0.05"),
+      '</div>',
+      '<div class="three-grid three-grid-4">',
+      threeNumberField("transmission", "Transmit", settings.transmission, "0", "1", "0.05"),
+      threeNumberField("thickness", "Thickness", settings.thickness, "0", "5", "0.05"),
+      threeNumberField("opacity", "Opacity", settings.opacity, "0.05", "1", "0.05"),
+      threeNumberField("iridescence", "Iridescence", settings.iridescence, "0", "1", "0.05"),
+      '</div>',
+      '<div class="three-grid three-grid-3">',
+      threeNumberField("iridescenceIOR", "Iri IOR", settings.iridescenceIOR, "1", "2.5", "0.05"),
+      threeNumberField("sheen", "Sheen", settings.sheen, "0", "1", "0.05"),
+      threeNumberField("sheenRoughness", "Sheen Rough", settings.sheenRoughness, "0", "1", "0.05"),
+      '</div>',
+      '<div class="three-toggle-row"><label class="check-row"><input type="checkbox" data-three-field="flatShading"' + (settings.flatShading ? " checked" : "") + '> Flat</label><label class="check-row"><input type="checkbox" data-three-field="useSourceColor"' + (settings.useSourceColor ? " checked" : "") + '> Source color</label></div>',
+      '</div>',
+      '<div class="three-panel-block">',
+      '<div class="three-subtitle">Export</div>',
+      '<div class="three-grid three-grid-3">',
+      threeColorField("background", "Background", settings.background, settings.transparentBackground),
+      threeNumberField("exportScale", "Scale", settings.exportScale, "1", "4", "1"),
+      '<div class="three-action-stack"><button class="command-btn" id="three-d-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original</button></div>',
+      '</div>',
+      '<div class="three-toggle-row"><label class="check-row"><input type="checkbox" data-three-field="transparentBackground"' + (settings.transparentBackground ? " checked" : "") + '> Transparent</label><label class="check-row"><input type="checkbox" data-three-field="bloomEnabled"' + (settings.bloomEnabled ? " checked" : "") + '> Bloom</label><label class="check-row"><input type="checkbox" data-three-field="bloomSeparate"' + (settings.bloomSeparate ? " checked" : "") + (settings.bloomEnabled ? "" : " disabled") + '> Separate flare</label></div>',
+      '<div class="three-grid three-grid-4">',
+      threeSliderField("flareOpacity", "Flare %", settings.flareOpacity, "0", "100", "1"),
+      threeSliderField("bloomStrength", "Strength", settings.bloomStrength, "0", "3", "0.05"),
+      threeSliderField("bloomRadius", "Radius", settings.bloomRadius, "0", "1", "0.05"),
+      threeSliderField("bloomThreshold", "Threshold", settings.bloomThreshold, "0", "1", "0.05"),
+      '</div>',
+      '</div>'
+    ].join("");
+  }
+
+  return [
+    '<div class="three-panel-block">',
+    '<div class="three-mode-row">',
+    threeModeButton("extrude", "Extrude"),
+    threeModeButton("revolve", "Revolve"),
+    threeModeButton("inflate", "Inflate"),
+    '</div>',
+    source ? '' : '<div class="field-note">This renders the selected object through Three.js and places a PNG back on the canvas. Extrude works best with closed fills. Revolve works best with a side profile path.</div>',
+    threeModeFields(settings),
+    '</div>'
+  ].join("");
+}
+
 function threeModeFields(settings) {
   if (threeDState.mode === "revolve") {
     return [
-      '<div class="three-grid three-grid-4">',
+      '<div class="three-grid three-grid-2">',
       threeNumberField("revolveSegments", "Segments", settings.revolveSegments, "8", "160", "1"),
       threeNumberField("revolveAngle", "Angle", settings.revolveAngle, "1", "360", "1"),
+      '</div>',
+      '<div class="three-grid three-grid-2">',
       '<div class="field"><label>Axis</label><select data-three-field="revolveAxis">' + enumOptions(settings.revolveAxis, [
         ["VERTICAL", "Vertical"],
         ["HORIZONTAL", "Horizontal"]
@@ -236,32 +264,32 @@ function threeModeFields(settings) {
         ["MAX", "Max"]
       ]) + '</select></div>',
       '</div>',
-      '<div class="three-grid three-grid-3">',
+      '<div class="three-grid three-grid-2">',
       '<div class="field"><label>Flip</label><label class="check-row"><input type="checkbox" data-three-field="revolveFlip"' + (settings.revolveFlip ? " checked" : "") + '> Profile</label></div>',
-      '<div class="field-note compact-note">Axis controls decide which side of the source profile becomes radius.</div>',
-      '<div></div>',
+      '<div class="field-note compact-note">Axis and anchor decide which side of the source profile becomes radius.</div>',
       '</div>'
     ].join("");
   }
 
   if (threeDState.mode === "inflate") {
     return [
-      '<div class="three-grid three-grid-3">',
+      '<div class="three-grid three-grid-2">',
       threeNumberField("inflateAmount", "Amount", settings.inflateAmount, "1", "100", "1"),
       threeNumberField("bevelSegments", "Segments", settings.bevelSegments, "1", "16", "1"),
-      '<div></div>',
       '</div>'
     ].join("");
   }
 
   return [
-    '<div class="three-grid three-grid-4">',
+    '<div class="three-grid three-grid-2">',
     threeNumberField("depth", "Depth", settings.depth, "1", "400", "1"),
     threeNumberField("bevelSize", "Bevel Size", settings.bevelSize, "0", "80", "0.5"),
+    '</div>',
+    '<div class="three-grid three-grid-2">',
     threeNumberField("bevelThickness", "Bevel Depth", settings.bevelThickness, "0", "80", "0.5"),
     threeNumberField("bevelSegments", "Segments", settings.bevelSegments, "0", "16", "1"),
     '</div>',
-    '<div class="three-grid three-grid-4">',
+    '<div class="three-grid three-grid-2">',
     threeNumberField("bevelOffset", "Bevel Offset", settings.bevelOffset, "-40", "40", "0.5"),
     '<div class="field"><label>Bevel Profile</label><select data-three-field="bevelProfile">' + enumOptions(settings.bevelProfile, [
       ["flat", "Flat"],
@@ -270,18 +298,38 @@ function threeModeFields(settings) {
       ["chisel", "Chisel"],
       ["slope", "Slope"]
     ]) + '</select></div>',
-    '<div></div>',
-    '<div></div>',
     '</div>'
   ].join("");
 }
 
 function threeNumberField(field, label, value, min, max, step) {
-  return '<div class="field"><label>' + label + '</label><input type="number" data-three-field="' + field + '" value="' + value + '"' +
+  return '<div class="field three-input-compact"><label>' + label + '</label><input type="number" data-three-field="' + field + '" value="' + value + '"' +
     (min !== undefined ? ' min="' + min + '"' : '') +
     (max !== undefined ? ' max="' + max + '"' : '') +
     (step !== undefined ? ' step="' + step + '"' : '') +
     '></div>';
+}
+
+function threeSliderField(field, label, value, min, max, step) {
+  return [
+    '<div class="three-slider-field">',
+    '<div class="three-slider-head"><label>' + label + '</label><span class="three-slider-value" data-three-value="' + field + '">' + formatThreeDFieldValue(field, value) + '</span></div>',
+    '<input type="range" data-three-field="' + field + '" value="' + value + '"' +
+      (min !== undefined ? ' min="' + min + '"' : '') +
+      (max !== undefined ? ' max="' + max + '"' : '') +
+      (step !== undefined ? ' step="' + step + '"' : '') +
+      '>',
+    '</div>'
+  ].join("");
+}
+
+function threeColorField(field, label, value, disabled) {
+  return [
+    '<div class="field">',
+    '<label>' + label + '</label>',
+    '<div class="three-color-chip"><input type="color" data-three-field="' + field + '" value="' + value + '"' + (disabled ? ' disabled' : '') + '><span class="three-color-readout">' + escapeHtml(String(value).toUpperCase()) + '</span></div>',
+    '</div>'
+  ].join("");
 }
 
 function bindThreeDPanel() {
@@ -292,9 +340,17 @@ function bindThreeDPanel() {
     };
   });
 
+  contentEl.querySelectorAll("[data-three-section]").forEach(function (button) {
+    button.onclick = function () {
+      threeDState.section = button.dataset.threeSection;
+      render();
+    };
+  });
+
   contentEl.querySelectorAll("[data-three-field]").forEach(function (input) {
     input.oninput = function () {
       updateThreeDSetting(input);
+      syncThreeDFieldInputs([input.dataset.threeField]);
       ensureThreeDPreview();
     };
     input.onchange = function () {
@@ -317,10 +373,31 @@ function bindThreeDPanel() {
     };
   }
 
+  const refreshInlineButton = document.getElementById("three-d-refresh-inline");
+  if (refreshInlineButton) {
+    refreshInlineButton.onclick = function () {
+      requestThreeDSource();
+    };
+  }
+
   const relinkButton = document.getElementById("three-d-relink");
   if (relinkButton) {
     relinkButton.onclick = function () {
       relinkThreeDOriginal();
+    };
+  }
+
+  const fitButton = document.getElementById("three-d-fit-frame");
+  if (fitButton) {
+    fitButton.onclick = function () {
+      fitThreeDFrame();
+    };
+  }
+
+  const resetButton = document.getElementById("three-d-reset-orbit");
+  if (resetButton) {
+    resetButton.onclick = function () {
+      resetThreeDOrbit();
     };
   }
 }
@@ -331,12 +408,14 @@ function updateThreeDSetting(input) {
   if (key === "lightingPreset") {
     threeDState.settings.lightingPreset = input.value;
     applyThreeDLightingPreset(input.value);
+    syncThreeDFieldInputs(["ambient", "directional", "lightX", "lightY", "lightZ", "background"]);
     render();
     return;
   }
   if (key === "materialPreset") {
     threeDState.settings.materialPreset = input.value;
     applyThreeDMaterialPreset(input.value);
+    syncThreeDFieldInputs(["roughness", "metalness", "clearcoat", "transmission", "thickness", "opacity", "emissive", "emissiveIntensity", "flatShading", "iridescence", "iridescenceIOR", "sheen", "sheenRoughness"]);
     render();
     return;
   }
@@ -347,7 +426,7 @@ function updateThreeDSetting(input) {
     }
     return;
   }
-  if (input.type === "number") {
+  if (input.type === "number" || input.type === "range") {
     threeDState.settings[key] = input.value === "" ? 0 : Number(input.value);
     return;
   }
@@ -363,6 +442,28 @@ function relinkThreeDOriginal() {
     nodeId: source.sourceNodeId,
     renderNodeId: source.renderNodeId || ""
   });
+}
+
+function fitThreeDFrame() {
+  const source = threeDState.source;
+  const settings = threeDState.settings;
+  const aspect = source && source.width && source.height ? Number(source.width) / Math.max(1, Number(source.height)) : 1;
+  settings.offsetX = 0;
+  settings.offsetY = 0;
+  settings.offsetZ = 0;
+  settings.framePadding = 18;
+  settings.zoom = Math.round(aspect > 1.3 ? 420 : 470);
+  syncThreeDFieldInputs(["offsetX", "offsetY", "offsetZ", "framePadding", "zoom"]);
+  ensureThreeDPreview();
+}
+
+function resetThreeDOrbit() {
+  const settings = threeDState.settings;
+  settings.rotationX = 32;
+  settings.rotationY = -28;
+  settings.rotationZ = 0;
+  syncThreeDFieldInputs(["rotationX", "rotationY", "rotationZ"]);
+  ensureThreeDPreview();
 }
 
 function ensureThreeDPreview() {
@@ -800,7 +901,7 @@ function exportThreeDRender() {
       bloomResult.renderer.dispose();
     }
     bloomBlendMode = "SCREEN";
-    bloomOpacity = 100;
+    bloomOpacity = clampThreeDValue(threeDState.settings.flareOpacity || 100, 0, 100);
   }
   if (baseResult && baseResult.renderer) {
     baseResult.renderer.dispose();
@@ -1445,14 +1546,31 @@ function createFakeEnvironmentMap(T, renderer, settings) {
 
 function syncThreeDFieldInputs(keys) {
   keys.forEach(function (key) {
-    const input = contentEl.querySelector('[data-three-field="' + key + '"]');
-    if (!input) return;
-    if (input.type === "checkbox") {
-      input.checked = threeDState.settings[key] === true;
-    } else {
-      input.value = String(threeDState.settings[key]);
-    }
+    contentEl.querySelectorAll('[data-three-field="' + key + '"]').forEach(function (input) {
+      if (input.type === "checkbox") {
+        input.checked = threeDState.settings[key] === true;
+      } else {
+        input.value = String(threeDState.settings[key]);
+      }
+    });
+    contentEl.querySelectorAll('[data-three-value="' + key + '"]').forEach(function (token) {
+      token.textContent = formatThreeDFieldValue(key, threeDState.settings[key]);
+    });
+    contentEl.querySelectorAll('[data-three-field="' + key + '"][type="color"]').forEach(function (input) {
+      const readout = input.parentNode && input.parentNode.querySelector(".three-color-readout");
+      if (readout) {
+        readout.textContent = String(threeDState.settings[key]).toUpperCase();
+      }
+    });
   });
+}
+
+function formatThreeDFieldValue(key, value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  if (key === "flareOpacity") return Math.round(number) + "%";
+  if (Math.abs(number - Math.round(number)) < 0.001) return String(Math.round(number));
+  return number.toFixed(2);
 }
 
 function clampThreeDValue(value, min, max) {

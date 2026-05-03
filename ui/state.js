@@ -32,6 +32,7 @@ const threeDState = {
   source: null,
   error: "",
   mode: "extrude",
+  section: "effect",
   requestPending: false,
   settings: {
     depth: 48,
@@ -83,6 +84,7 @@ const threeDState = {
     sheenRoughness: 0.45,
     bloomEnabled: false,
     bloomSeparate: false,
+    flareOpacity: 100,
     bloomStrength: 0.85,
     bloomRadius: 0.35,
     bloomThreshold: 0.72

@@ -15,11 +15,16 @@ runNodeCheck("code.js");
 runNodeCheck("scripts/convert-print.js");
 
 const html = fs.readFileSync(path.join(root, "ui.html"), "utf8");
-const blocks = Array.from(html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g));
-const lastBlock = blocks.length ? blocks[blocks.length - 1] : null;
+const openTag = html.lastIndexOf("<script");
+const closeTag = html.lastIndexOf("</script>");
 
-if (!lastBlock) {
+if (openTag === -1 || closeTag === -1 || closeTag <= openTag) {
   throw new Error("Inline UI script not found");
 }
 
-new vm.Script(lastBlock[1]);
+const tagEnd = html.indexOf(">", openTag);
+if (tagEnd === -1 || tagEnd >= closeTag) {
+  throw new Error("Inline UI script tag is malformed");
+}
+
+new vm.Script(html.slice(tagEnd + 1, closeTag));
