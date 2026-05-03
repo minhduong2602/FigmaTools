@@ -249,7 +249,7 @@ onmessage = function (event) {
 
 function requestUiResizeForTab(tab) {
   if (tab === "three-d") {
-    post({ type: "resize-ui", width: 720, height: 760 });
+    post({ type: "resize-ui", width: 560, height: 900 });
     return;
   }
   if (tab === "appearance") {

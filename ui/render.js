@@ -51,7 +51,7 @@ function render() {
       }
 
       if (state.stack.length === 0) {
-        contentEl.innerHTML = objectTemplate() + '<div class="empty">No appearance rows yet. Add a fill or stroke from the bottom bar.</div>';
+        contentEl.innerHTML = '<div class="three-d-layout" style="gap: 4px; padding: 6px; background: #2b2b2b;">' + objectTemplate() + '<section class="three-panel-card" style="background: #323232; padding: 16px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2); text-align: center; margin-top: 4px;"><div class="empty" style="color: #888;">No appearance rows yet. Add a fill or stroke from the bottom bar.</div></section></div>';
         bindEvents();
         fxMenuOpen = false;
         renderFxMenu();
@@ -59,7 +59,7 @@ function render() {
         return;
       }
 
-      contentEl.innerHTML = objectTemplate() + state.stack.map(layerTemplate).reverse().join("");
+      contentEl.innerHTML = '<div class="three-d-layout" style="gap: 4px; padding: 6px; background: #2b2b2b;">' + objectTemplate() + '<section class="three-panel-card" style="background: #323232; padding: 4px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 4px;">' + state.stack.map(layerTemplate).reverse().join("") + '</section></div>';
       bindEvents();
       renderFxMenu();
       renderModal();
@@ -97,13 +97,15 @@ function render() {
 
     function objectToolsTemplate() {
       return [
-        '<div class="modal-section">',
-        '<div class="modal-section-title">Path Cleanup</div>',
-        '<div class="object-tool-grid">',
-        '<button class="object-tool-card" data-open-object-tool="simplify"><span class="object-tool-name">Simplify</span><span class="object-tool-value">Precision ' + Math.round(objectToolsState.simplifyTolerance) + '%</span></button>',
-        '<button class="object-tool-card" data-open-object-tool="smooth"><span class="object-tool-name">Smooth</span><span class="object-tool-value">' + Math.round(objectToolsState.smoothAmount) + '%</span></button>',
+        '<div class="three-d-layout" style="gap: 4px; padding: 6px; background: #2b2b2b; height: 100%;">',
+        '<section class="three-panel-card" style="background: #323232; padding: 12px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">',
+        '<div class="modal-section-title" style="font-weight: 600; font-size: 11px; color: #e0e0e0; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 12px;">Path Cleanup</div>',
+        '<div class="object-tool-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">',
+        '<button class="object-tool-card" data-open-object-tool="simplify" style="background: #2a2a2a; border: 1px solid #1a1a1a; border-radius: 4px; padding: 10px; text-align: left; transition: all 0.2s;"><span class="object-tool-name" style="display: block; color: #fff; font-weight: 600; margin-bottom: 4px;">Simplify</span><span class="object-tool-value" style="display: block; color: #888; font-size: 10px;">Precision ' + Math.round(objectToolsState.simplifyTolerance) + '%</span></button>',
+        '<button class="object-tool-card" data-open-object-tool="smooth" style="background: #2a2a2a; border: 1px solid #1a1a1a; border-radius: 4px; padding: 10px; text-align: left; transition: all 0.2s;"><span class="object-tool-name" style="display: block; color: #fff; font-weight: 600; margin-bottom: 4px;">Smooth</span><span class="object-tool-value" style="display: block; color: #888; font-size: 10px;">' + Math.round(objectToolsState.smoothAmount) + '%</span></button>',
         '</div>',
-        '<div class="field-note">Open a tool, drag the slider to preview directly on the selected path, then apply when it feels right.</div>',
+        '<div class="field-note" style="margin-top: 12px; font-size: 10px; color: #888; line-height: 1.4;">Open a tool, drag the slider to preview directly on the selected path, then apply when it feels right.</div>',
+        '</section>',
         '</div>'
       ].join("");
     }
@@ -129,19 +131,23 @@ function render() {
     function swatchesTemplate() {
       const swatches = state.swatches || [];
       if (!swatches.length) {
-        return '<div class="empty">No swatches saved.</div>';
+        return '<div class="three-d-layout swatches-panel-layout"><section class="three-panel-card swatches-panel-card swatches-empty-card"><div class="empty">No swatches saved.</div></section></div>';
       }
       return [
-        '<div class="swatch-grid">',
+        '<div class="three-d-layout swatches-panel-layout">',
+        '<section class="three-panel-card swatches-panel-card">',
+        '<div class="swatch-grid swatch-grid-compact">',
         swatches.map(function (swatch) {
           return [
-            '<div class="swatch-card" data-swatch="' + swatch.id + '" title="' + escapeHtml(swatch.name || swatch.type) + '">',
-            '<button class="swatch-chip" data-swatch-apply="' + swatch.id + '" style="' + swatchStyleFromSwatch(swatch) + '"></button>',
-            '<button class="footer-btn danger swatch-delete" data-swatch-remove="' + swatch.id + '" title="Remove swatch">' + trashIcon + '</button>',
-            '<div class="swatch-name">' + escapeHtml(swatchLabel(swatch)) + '</div>',
+            '<div class="swatch-card swatch-card-compact" data-swatch="' + swatch.id + '" title="' + escapeHtml(swatch.name || swatch.type) + '">',
+            '<button class="swatch-chip swatch-chip-compact" data-swatch-apply="' + swatch.id + '" style="' + swatchStyleFromSwatch(swatch) + '"></button>',
+            '<button class="footer-btn danger swatch-delete swatch-delete-compact" data-swatch-remove="' + swatch.id + '" title="Remove swatch">' + trashIcon + '</button>',
+            '<div class="swatch-name swatch-name-compact">' + escapeHtml(swatchLabel(swatch)) + '</div>',
             '</div>'
           ].join("");
         }).join(""),
+        '</div>',
+        '</section>',
         '</div>'
       ].join("");
     }
@@ -173,10 +179,10 @@ function render() {
 
       if (state.selectedCount === 2) {
         statusEl.textContent = "Ready to make a blend.";
-        contentEl.innerHTML = '<div class="empty">Use Make Blend to generate live interpolated objects between the two selected objects.</div>';
+        contentEl.innerHTML = '<div class="three-d-layout" style="gap: 4px; padding: 6px; background: #2b2b2b; height: 100%;"><section class="three-panel-card" style="background: #323232; padding: 16px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2); text-align: center;"><div class="empty" style="color: #888;">Use Make Blend to generate live interpolated objects between the two selected objects.</div></section></div>';
       } else {
         statusEl.textContent = "Select two objects.";
-        contentEl.innerHTML = '<div class="empty">Select exactly two objects, then switch here and click Make Blend.</div>';
+        contentEl.innerHTML = '<div class="three-d-layout" style="gap: 4px; padding: 6px; background: #2b2b2b; height: 100%;"><section class="three-panel-card" style="background: #323232; padding: 16px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2); text-align: center;"><div class="empty" style="color: #888;">Select exactly two objects, then switch here and click Make Blend.</div></section></div>';
       }
       renderModal();
     }
@@ -189,17 +195,21 @@ function render() {
 
     function blendTemplate(options) {
       return [
+        '<div class="three-d-layout" style="gap: 4px; padding: 6px; background: #2b2b2b;">',
+        '<section class="three-panel-card" style="background: #323232; padding: 4px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2); margin-bottom: 6px;">',
         '<article data-blend="true">',
-        '<div class="row object" data-blend-options title="Double click to edit blend options">',
+        '<div class="row object" data-blend-options title="Double click to edit blend options" style="background: #2a2a2a; border-radius: 3px; border: 1px solid #1a1a1a; margin-bottom: 0;">',
         '<div class="eye"></div>',
         '<div class="caret"></div>',
-        '<div class="label"><span class="label-name">Blend</span><span class="summary">' + blendSummary(options) + '</span></div>',
+        '<div class="label"><span class="label-name" style="font-weight: 600; color: #fff;">Blend</span><span class="summary">' + blendSummary(options) + '</span></div>',
         '<button class="footer-btn" data-blend-edit title="Blend options">' + editIcon + '</button>',
         '</div>',
         '</article>',
-        '<div class="modal-section blend-info">',
-        '<div class="modal-section-title">Endpoints</div>',
-        '<div class="summary">' + (options.editEndpoints ? "Editable sources visible" : "Sources hidden") + '</div>',
+        '</section>',
+        '<section class="three-panel-card" style="background: #323232; padding: 12px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">',
+        '<div class="modal-section-title" style="font-weight: 600; font-size: 11px; color: #e0e0e0; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px;">Endpoints</div>',
+        '<div class="summary" style="font-size: 10px; color: #888;">' + (options.editEndpoints ? "Editable sources visible" : "Sources hidden") + '</div>',
+        '</section>',
         '</div>'
       ].join("");
     }
@@ -219,14 +229,16 @@ function render() {
       const objectType = state.baseType === "TEXT" ? "Type" : "Object";
       const textHint = state.isTextBase && state.textContent ? " - " + escapeHtml(state.textContent) : "";
       return [
+        '<section class="three-panel-card" style="background: #323232; padding: 4px; border-radius: 4px; border: 1px solid #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.2); margin-bottom: 4px;">',
         '<article data-object="true">',
-        '<div class="row object" data-object-row title="Double click to edit object appearance">',
+        '<div class="row object" data-object-row title="Double click to edit object appearance" style="background: #2a2a2a; border-radius: 3px; border: 1px solid #1a1a1a; margin-bottom: 0; min-height: 38px;">',
         '<div class="eye"></div>',
         '<div class="caret"></div>',
-        '<div class="label"><span class="label-name">' + objectType + '</span><span class="summary">Opacity: ' + globalAppearance.opacity + '%' + blendText + textHint + '</span></div>',
+        '<div class="label"><span class="label-name" style="font-weight: 600; color: #fff;">' + objectType + '</span><span class="summary">Opacity: ' + globalAppearance.opacity + '%' + blendText + textHint + '</span></div>',
         '<button class="footer-btn" data-object-edit title="Edit object">' + editIcon + '</button>',
         '</div>',
-        '</article>'
+        '</article>',
+        '</section>'
       ].join("");
     }
 
@@ -246,11 +258,11 @@ function render() {
       }).join("") : "";
 
       return [
-        '<article data-layer="' + layer.id + '" class="' + (layer.visible ? "" : "disabled") + '">',
-        '<div class="row' + (selected ? " selected" : "") + '" data-row-layer="' + layer.id + '" draggable="true" title="Double click to edit">',
+        '<article data-layer="' + layer.id + '" class="' + (layer.visible ? "" : "disabled") + '" style="background: #2a2a2a; border-radius: 3px; border: 1px solid #1a1a1a; overflow: hidden; margin-bottom: 2px;">',
+        '<div class="row' + (selected ? " selected" : "") + '" data-row-layer="' + layer.id + '" draggable="true" title="Double click to edit" style="border-bottom: ' + (opened ? '1px solid #1a1a1a' : 'none') + '; background: ' + (selected ? '#38556b' : 'transparent') + ';">',
         '<div class="eye" data-action="visible" title="Toggle visibility">' + (layer.visible ? "o" : "-") + '</div>',
         '<div class="caret" data-action="expand" title="Expand">' + (opened ? "v" : ">") + '</div>',
-        '<div class="label"><span class="label-name">' + label + '</span><span class="swatch" style="' + swatchStyle(layer) + '"></span><span class="summary">' + detail + '</span></div>',
+        '<div class="label"><span class="label-name" style="font-weight: 500;">' + label + '</span><span class="swatch" style="' + swatchStyle(layer) + '; border-radius: 3px;"></span><span class="summary">' + detail + '</span></div>',
         '<button class="footer-btn" data-edit-layer="' + layer.id + '" title="Edit stack">' + (effects.length ? '<span class="fx-label">fx</span>' : editIcon) + '</button>',
         '</div>',
         opacityRow,
@@ -263,7 +275,7 @@ function render() {
       const blend = layer.blendMode || "NORMAL";
       const blendText = blend === "NORMAL" ? "Default" : displayBlendMode(blend);
       return [
-        '<div class="row opacity-row" data-opacity-row="' + layer.id + '" title="Double click to edit opacity and blend">',
+        '<div class="row opacity-row" data-opacity-row="' + layer.id + '" title="Double click to edit opacity and blend" style="background: #252525; border-bottom: 1px solid #1a1a1a;">',
         '<div class="eye"></div>',
         '<div></div>',
         '<div class="label"><span class="label-name">Opacity:</span><span class="summary">' + layer.opacity + '% ' + blendText + '</span></div>',
@@ -357,7 +369,7 @@ function render() {
 
     function effectTemplate(layer, effect) {
       return [
-        '<div class="row child" data-layer="' + layer.id + '" data-effect="' + effect.id + '" draggable="true" title="Double click to edit effect">',
+        '<div class="row child" data-layer="' + layer.id + '" data-effect="' + effect.id + '" draggable="true" title="Double click to edit effect" style="background: #252525; border-bottom: 1px solid #1a1a1a;">',
         '<div class="eye" data-effect-action="visible" title="Toggle effect">' + (effect.visible ? "o" : "-") + '</div>',
         '<div></div>',
         '<div class="label"><span class="label-name">' + escapeHtml(effect.name) + '</span><span class="fx-mark">fx</span><span class="summary">' + effectSummary(effect) + '</span></div>',

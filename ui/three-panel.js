@@ -14,8 +14,14 @@ const threeDPreviewRuntime = {
   dragMode: "orbit",
   startRotationX: 0,
   startRotationY: 0,
-  startRotationZ: 0
+  startRotationZ: 0,
+  previewQueued: false,
+  interactionMode: false,
+  interactionTimer: 0
 };
+
+const THREE_D_EXPORT_MAX_DIMENSION = 3072;
+const THREE_D_EXPORT_MAX_PIXELS = 6291456;
 
 window.addEventListener("appearance-3d-ready", function () {
   if (activeTab === "three-d") {
@@ -49,7 +55,7 @@ function renderThreeDPanel() {
   } else if (threeDState.error) {
     statusEl.textContent = threeDState.error;
   } else {
-    statusEl.textContent = "Select one vector-like object.";
+    statusEl.textContent = "Select one grouped object, or multiple drawable objects.";
   }
   contentEl.innerHTML = threeDPanelTemplate();
   bindEvents();
@@ -68,26 +74,39 @@ function threeDPanelTemplate() {
     ? escapeHtml(source.nodeType + " - " + Math.round(source.width) + " x " + Math.round(source.height))
     : (threeDState.requestPending ? "Loading source" : (threeDState.error ? escapeHtml(threeDState.error) : "Select one object and refresh."));
   return [
-    '<div class="three-d-layout">',
-    '<section class="three-panel-card three-d-preview-card three-d-preview-sticky">',
-    '<div class="three-card-title">Preview</div>',
-    '<div class="three-d-preview-head"><span class="muted">' + sourceSummary + '</span></div>',
-    '<div class="three-d-preview-stage" style="' + stageStyle + '"><canvas id="three-d-canvas"></canvas><img id="three-d-preview-image" class="three-d-preview-image" alt=""><div id="three-d-overlay" class="three-d-overlay"></div></div>',
-    '<div class="three-d-help muted">Drag orbits X/Y. Shift + drag rolls Z. Scroll to zoom.</div>',
-    '<div class="three-d-preview-actions three-d-panel-actions"><button class="command-btn" id="three-d-fit-frame"' + (source ? "" : " disabled") + '>Fit</button><button class="command-btn" id="three-d-open-preview"' + (source ? "" : " disabled") + '>Focus</button><button class="command-btn" id="three-d-inline-export"' + (source ? "" : " disabled") + '>' + actionLabel + '</button></div>',
-    '</section>',
-    '<section class="three-panel-card three-d-sections-card">',
-    '<div class="three-section-tabs">',
-    threeSectionButton("effect", "Effect"),
-    threeSectionButton("camera", "Camera"),
-    threeSectionButton("material", "Material"),
+    '<div class="three-d-layout three-d-layout-compact">',
+    '<section class="three-panel-card three-d-preview-card three-panel-surface three-d-preview-sticky-top">',
+    '<div class="three-preview-meta">',
+    '<div class="three-panel-heading">3D &amp; Materials</div>',
+    '<span class="muted three-preview-summary">' + sourceSummary + '</span>',
     '</div>',
-    '<div class="three-section-body">',
+    '<div class="three-preview-grid">',
+    '<div class="three-d-preview-stage three-d-preview-stage-fixed">',
+    '<canvas id="three-d-canvas"></canvas>',
+    '<img id="three-d-preview-image" class="three-d-preview-image" alt="">',
+    '<div id="three-d-overlay" class="three-d-overlay"></div>',
+    '</div>',
+    '<div class="three-d-preview-actions three-d-panel-actions three-preview-side-actions">',
+    '<button class="command-btn three-side-btn" id="three-d-fit-frame"' + (source ? '' : ' disabled') + '>Fit</button>',
+    '<button class="command-btn three-side-btn" id="three-d-open-preview"' + (source ? '' : ' disabled') + '>Focus</button>',
+    '<button class="command-btn three-side-btn three-side-btn-primary" id="three-d-inline-export"' + (source ? '' : ' disabled') + '>' + actionLabel + '</button>',
+    '</div>',
+    '</div>',
+    '<div class="three-preview-tip">Drag rotates X/Y. Shift + drag rotates Z. Scroll to zoom.</div>',
+    '</section>',
+    '<section class="three-panel-card three-d-sections-card three-panel-surface">',
+    '<div class="three-section-tabs three-section-tabs-four">',
+    threeSectionButton('effect', 'Object'),
+    threeSectionButton('material', 'Materials'),
+    threeSectionButton('camera', 'Lighting'),
+    threeSectionButton('post', 'Post'),
+    '</div>',
+    '<div class="three-section-body three-section-body-padded">',
     threeSectionContent(settings, source, relinkDisabled),
     '</div>',
     '</section>',
     '</div>'
-  ].join("");
+  ].join('');
 }
 
 function threeDStageStyle(source, large) {
@@ -104,9 +123,9 @@ function threeDStageStyle(source, large) {
   return "aspect-ratio:" + ratio + ";min-height:" + boundedHeight + "px;";
 }
 
-function configureThreeDRenderer(T, renderer, useDevicePixelRatio) {
+function configureThreeDRenderer(T, renderer, useDevicePixelRatio, settings) {
   if (!renderer) return;
-  renderer.setPixelRatio(useDevicePixelRatio ? Math.min(window.devicePixelRatio || 1, 2) : 1);
+  renderer.setPixelRatio(useDevicePixelRatio ? Math.min(window.devicePixelRatio || 1, 1.25) : 1);
   if ("outputColorSpace" in renderer && T.SRGBColorSpace) {
     renderer.outputColorSpace = T.SRGBColorSpace;
   }
@@ -114,47 +133,64 @@ function configureThreeDRenderer(T, renderer, useDevicePixelRatio) {
     renderer.toneMapping = T.ACESFilmicToneMapping;
   }
   if ("toneMappingExposure" in renderer) {
-    renderer.toneMappingExposure = 1;
+    renderer.toneMappingExposure = Math.max(0.05, Number(settings && settings.exposure !== undefined ? settings.exposure : 1) || 1);
+  }
+}
+
+function configureThreeDPreviewRenderer(T, renderer, settings, fastMode) {
+  if (!renderer) return;
+  if (fastMode) {
+    renderer.setPixelRatio(0.75);
+  } else {
+    configureThreeDRenderer(T, renderer, true, settings);
   }
 }
 
 function threeModeButton(mode, label) {
-  return '<button class="three-mode-btn' + (threeDState.mode === mode ? ' active' : '') + '" data-three-mode="' + mode + '">' + label + '</button>';
+  const active = threeDState.mode === mode;
+  let icon = '';
+  if (mode === 'extrude') icon = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" style="margin-bottom:4px;"><path d="M4 4h6v6H4z"/><path d="M14 14h6v6h-6z"/><path d="M10 10l4 4"/></svg>';
+  if (mode === 'revolve') icon = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" style="margin-bottom:4px;"><path d="M12 2v20"/><path d="M12 12c4 0 8-3 8-7s-4-7-8-7"/></svg>';
+  if (mode === 'inflate') icon = '<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" style="margin-bottom:4px;"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 8 8"/></svg>';
+
+  return '<button class="three-mode-btn' + (active ? ' active' : '') + '" data-three-mode="' + mode + '" style="' +
+    'background: ' + (active ? '#444' : '#2a2a2a') + ';' +
+    'border: 1px solid ' + (active ? '#1473E6' : '#1a1a1a') + ';' +
+    'border-radius: 4px;' +
+    'color: ' + (active ? '#fff' : '#aaa') + ';' +
+    'display: flex;' +
+    'flex-direction: column;' +
+    'align-items: center;' +
+    'justify-content: center;' +
+    'padding: 8px 0;' +
+    'min-height: 52px;' +
+    'cursor: pointer;' +
+    'transition: all 0.15s ease;' +
+    '">' +
+    icon +
+    '<span style="font-size: 10px; font-weight: ' + (active ? '600' : '400') + '">' + label + '</span>' +
+    '</button>';
 }
 
 function threeSectionButton(section, label) {
-  return '<button class="three-section-btn' + (threeDState.section === section ? ' active' : '') + '" data-three-section="' + section + '">' + label + '</button>';
+  const active = threeDState.section === section;
+  return '<button class="three-section-btn' + (active ? ' active' : '') + '" data-three-section="' + section + '">' + label + '</button>';
 }
 
 function threeSectionContent(settings, source, relinkDisabled) {
   if (threeDState.section === "camera") {
     return [
       '<div class="three-panel-block">',
-      '<div class="three-grid three-grid-4">',
-      threeNumberField("rotationX", "Rot X", settings.rotationX),
-      threeNumberField("rotationY", "Rot Y", settings.rotationY),
-      threeNumberField("rotationZ", "Rot Z", settings.rotationZ),
-      threeNumberField("zoom", "Zoom", settings.zoom, "120", "1200", "1"),
-      '</div>',
-      '<div class="three-grid three-grid-4">',
-      threeNumberField("offsetX", "Offset X", settings.offsetX),
-      threeNumberField("offsetY", "Offset Y", settings.offsetY),
-      threeNumberField("offsetZ", "Offset Z", settings.offsetZ),
-      threeNumberField("framePadding", "Padding", settings.framePadding, "0", "60", "1"),
-      '</div>',
-      '<div class="mini-btn-row"><button type="button" class="mini-btn" id="three-d-reset-orbit"' + (source ? "" : " disabled") + '>Reset Orbit</button><button type="button" class="mini-btn" id="three-d-refresh-inline"' + (source ? "" : " disabled") + '>Refresh Source</button></div>',
-      '</div>',
-      '<div class="three-panel-block">',
-      '<div class="three-subtitle">Lighting</div>',
-      '<div class="three-grid three-grid-2">',
-      '<div class="field"><label>Light preset</label><select data-three-field="lightingPreset">' + enumOptions(settings.lightingPreset, [
+      '<div class="three-block-heading">Environment & Lighting</div>',
+      '<div class="three-grid two-col-grid">',
+      '<div class="field"><label>Lighting</label><select data-three-field="lightingPreset">' + enumOptions(settings.lightingPreset, [
         ["studio", "Studio"],
         ["metal_booth", "Metal Booth"],
         ["glass_clean", "Glass Clean"],
         ["sunset", "Sunset"],
         ["night_neon", "Night Neon"]
       ]) + '</select></div>',
-      '<div class="field"><label>HDRI / Env</label><select data-three-field="environmentPreset">' + enumOptions(settings.environmentPreset, [
+      '<div class="field"><label>Environment</label><select data-three-field="environmentPreset">' + enumOptions(settings.environmentPreset, [
         ["studio_soft", "Studio Soft"],
         ["chrome_booth", "Chrome Booth"],
         ["frosted_room", "Frosted Room"],
@@ -163,15 +199,18 @@ function threeSectionContent(settings, source, relinkDisabled) {
         ["holo_prism", "Holo Prism"]
       ]) + '</select></div>',
       '</div>',
-      '<div class="three-grid three-grid-3">',
-      threeSliderField("ambient", "Ambient", settings.ambient, "0", "3", "0.05"),
-      threeSliderField("directional", "Direct", settings.directional, "0", "4", "0.05"),
-      threeSliderField("environmentStrength", "Env", settings.environmentStrength, "0", "4", "0.05"),
+      '<div class="three-grid two-col-grid">',
+      threeSliderField("ambient", "Ambient Light", settings.ambient, "0", "3", "0.05"),
+      threeSliderField("directional", "Direct Light", settings.directional, "0", "4", "0.05"),
+      threeSliderField("environmentStrength", "Env Intensity", settings.environmentStrength, "0", "4", "0.05"),
+      '<div></div>',
       '</div>',
-      '<div class="three-grid three-grid-3">',
-      threeNumberField("lightX", "Light X", settings.lightX, "-8", "8", "0.1"),
-      threeNumberField("lightY", "Light Y", settings.lightY, "-8", "8", "0.1"),
-      threeNumberField("lightZ", "Light Z", settings.lightZ, "-8", "8", "0.1"),
+      '<div class="three-block-subhead">Light Direction</div>',
+      '<div class="three-grid two-col-grid">',
+      threeNumberField("lightX", "X", settings.lightX, "-8", "8", "0.1"),
+      threeNumberField("lightY", "Y", settings.lightY, "-8", "8", "0.1"),
+      threeNumberField("lightZ", "Z", settings.lightZ, "-8", "8", "0.1"),
+      '<div></div>',
       '</div>',
       '</div>'
     ].join("");
@@ -180,7 +219,8 @@ function threeSectionContent(settings, source, relinkDisabled) {
   if (threeDState.section === "material") {
     return [
       '<div class="three-panel-block">',
-      '<div class="field"><label>Preset</label><select data-three-field="materialPreset">' + enumOptions(settings.materialPreset, [
+      '<div class="three-grid one-col-grid">',
+      '<div class="field"><label>Material Preset</label><select data-three-field="materialPreset">' + enumOptions(settings.materialPreset, [
         ["plastic", "Plastic"],
         ["matte", "Matte"],
         ["metal", "Metal"],
@@ -192,55 +232,126 @@ function threeSectionContent(settings, source, relinkDisabled) {
         ["neon", "Neon"],
         ["clay", "Clay"]
       ]) + '</select></div>',
-      '<div class="three-grid three-grid-2">',
-      threeColorField("color", "Color", settings.color, settings.useSourceColor),
+      '</div>',
+      '<div class="three-grid two-col-grid three-color-pair">',
+      threeColorField("color", "Base Color", settings.color, settings.useSourceColor),
       threeColorField("emissive", "Emissive", settings.emissive, false),
       '</div>',
-      '<div class="three-grid three-grid-4">',
-      threeSliderField("roughness", "Rough", settings.roughness, "0", "1", "0.05"),
-      threeSliderField("metalness", "Metal", settings.metalness, "0", "1", "0.05"),
+      '<div class="three-toggle-row three-toggle-row-spaced">',
+      '<label class="check-row"><input type="checkbox" data-three-field="useSourceColor"' + (settings.useSourceColor ? " checked" : "") + '> Source Color</label>',
+      '<div></div>',
+      '</div>',
+      '<div class="three-grid two-col-grid">',
+      threeSliderField("roughness", "Roughness", settings.roughness, "0", "1", "0.05"),
+      threeSliderField("metalness", "Metallic", settings.metalness, "0", "1", "0.05"),
+      threeSliderField("opacity", "Opacity", settings.opacity, "0.05", "1", "0.05"),
+      '<div></div>',
+      '</div>',
+      '<details class="three-advanced-toggle"><summary>Advanced Properties</summary>',
+      '<div class="three-grid two-col-grid three-advanced-grid">',
       threeSliderField("clearcoat", "Clearcoat", settings.clearcoat, "0", "1", "0.05"),
       threeSliderField("emissiveIntensity", "Glow", settings.emissiveIntensity, "0", "4", "0.05"),
-      '</div>',
-      '<div class="three-grid three-grid-4">',
       threeNumberField("transmission", "Transmit", settings.transmission, "0", "1", "0.05"),
       threeNumberField("thickness", "Thickness", settings.thickness, "0", "5", "0.05"),
-      threeNumberField("opacity", "Opacity", settings.opacity, "0.05", "1", "0.05"),
       threeNumberField("iridescence", "Iridescence", settings.iridescence, "0", "1", "0.05"),
-      '</div>',
-      '<div class="three-grid three-grid-3">',
       threeNumberField("iridescenceIOR", "Iri IOR", settings.iridescenceIOR, "1", "2.5", "0.05"),
       threeNumberField("sheen", "Sheen", settings.sheen, "0", "1", "0.05"),
       threeNumberField("sheenRoughness", "Sheen Rough", settings.sheenRoughness, "0", "1", "0.05"),
+      '</div></details>',
+      '<div class="three-toggle-row three-toggle-row-spaced">',
+      '<label class="check-row"><input type="checkbox" data-three-field="flatShading"' + (settings.flatShading ? " checked" : "") + '> Flat Shading</label>',
+      '<div></div>',
       '</div>',
-      '<div class="three-toggle-row"><label class="check-row"><input type="checkbox" data-three-field="flatShading"' + (settings.flatShading ? " checked" : "") + '> Flat</label><label class="check-row"><input type="checkbox" data-three-field="useSourceColor"' + (settings.useSourceColor ? " checked" : "") + '> Source color</label></div>',
-      '</div>',
+      '</div>'
+    ].join("");
+  }
+
+  if (threeDState.section === "post") {
+    return [
       '<div class="three-panel-block">',
-      '<div class="three-subtitle">Export</div>',
-      '<div class="three-grid three-grid-3">',
-      threeColorField("background", "Background", settings.background, settings.transparentBackground),
-      threeNumberField("exportScale", "Scale", settings.exportScale, "1", "4", "1"),
-      '<div class="three-action-stack"><button class="command-btn" id="three-d-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original</button></div>',
+      '<div class="three-block-heading">Post-Processing & Export</div>',
+      '<div class="three-grid two-col-grid">',
+      threeColorField("background", "Bg Color", settings.background, settings.transparentBackground),
+      threeNumberField("exportScale", "Resolution", settings.exportScale, "1", "4", "1"),
       '</div>',
-      '<div class="three-toggle-row"><label class="check-row"><input type="checkbox" data-three-field="transparentBackground"' + (settings.transparentBackground ? " checked" : "") + '> Transparent</label><label class="check-row"><input type="checkbox" data-three-field="bloomEnabled"' + (settings.bloomEnabled ? " checked" : "") + '> Bloom</label><label class="check-row"><input type="checkbox" data-three-field="bloomSeparate"' + (settings.bloomSeparate ? " checked" : "") + (settings.bloomEnabled ? "" : " disabled") + '> Separate flare</label></div>',
-      '<div class="three-grid three-grid-4">',
-      threeSliderField("flareOpacity", "Flare %", settings.flareOpacity, "0", "100", "1"),
+      '<div class="three-block-subhead">Look</div>',
+      '<div class="three-grid two-col-grid">',
+      threeSliderField("exposure", "Exposure", settings.exposure, "0.4", "2.4", "0.05"),
+      threeSliderField("contrast", "Contrast", settings.contrast, "-0.6", "0.6", "0.05"),
+      threeSliderField("grainAmount", "Film Grain", settings.grainAmount, "0", "0.18", "0.01"),
+      threeSliderField("chromaticAberration", "Chromatic", settings.chromaticAberration, "0", "8", "0.25"),
+      '</div>',
+      '<div class="three-block-subhead">Depth</div>',
+      '<div class="three-toggle-row three-toggle-row-spaced">',
+      '<label class="check-row"><input type="checkbox" data-three-field="contactShadow"' + (settings.contactShadow ? " checked" : "") + '> Contact Shadow</label>',
+      '</div>',
+      '<div class="three-grid two-col-grid' + (settings.contactShadow ? "" : " is-disabled") + '">',
+      threeSliderField("contactShadowOpacity", "Shadow Opacity", settings.contactShadowOpacity, "0", "1", "0.05"),
+      threeSliderField("contactShadowSoftness", "Shadow Soft", settings.contactShadowSoftness, "0.4", "2.5", "0.05"),
+      threeSliderField("contactShadowScale", "Shadow Scale", settings.contactShadowScale, "0.6", "2", "0.05"),
+      '<div></div>',
+      '</div>',
+      '<div class="three-toggle-row three-toggle-row-spaced">',
+      '<label class="check-row"><input type="checkbox" data-three-field="transparentBackground"' + (settings.transparentBackground ? " checked" : "") + '> Transparent</label>',
+      '<label class="check-row"><input type="checkbox" data-three-field="bloomEnabled"' + (settings.bloomEnabled ? " checked" : "") + '> Bloom</label>',
+      '<label class="check-row"><input type="checkbox" data-three-field="bloomSeparate"' + (settings.bloomSeparate ? " checked" : "") + (settings.bloomEnabled ? "" : " disabled") + '> Split Flare</label>',
+      '</div>',
+      '<div class="three-grid two-col-grid' + (settings.bloomEnabled ? '' : ' is-disabled') + '">',
       threeSliderField("bloomStrength", "Strength", settings.bloomStrength, "0", "3", "0.05"),
       threeSliderField("bloomRadius", "Radius", settings.bloomRadius, "0", "1", "0.05"),
       threeSliderField("bloomThreshold", "Threshold", settings.bloomThreshold, "0", "1", "0.05"),
+      threeSliderField("flareOpacity", "Flare Opacity", settings.flareOpacity, "0", "100", "1"),
       '</div>',
+      '<div class="three-action-stack three-action-stack-spaced"><button class="command-btn three-inline-btn" id="three-d-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original Layer</button></div>',
       '</div>'
     ].join("");
   }
 
   return [
     '<div class="three-panel-block">',
-    '<div class="three-mode-row">',
+    '<div class="three-block-heading">Transform</div>',
+    '<div class="three-grid two-col-grid">',
+    '<div class="field"><label>View Preset</label><select data-three-field="rotationPreset">' + enumOptions(settings.rotationPreset || "custom", [
+      ["custom", "Custom Rotation"],
+      ["front", "Front"],
+      ["back", "Back"],
+      ["left", "Left"],
+      ["right", "Right"],
+      ["top", "Top"],
+      ["bottom", "Bottom"],
+      ["offaxis_front", "Off-Axis Front"],
+      ["offaxis_back", "Off-Axis Back"],
+      ["offaxis_left", "Off-Axis Left"],
+      ["offaxis_right", "Off-Axis Right"],
+      ["offaxis_top", "Off-Axis Top"],
+      ["offaxis_bottom", "Off-Axis Bottom"],
+      ["isometric_left", "Isometric Left"],
+      ["isometric_right", "Isometric Right"],
+      ["isometric_top", "Isometric Top"],
+      ["isometric_bottom", "Isometric Bottom"]
+    ]) + '</select></div>',
+    '<div></div>',
+    '</div>',
+    '<div class="three-grid two-col-grid">',
+    threeNumberField("rotationX", "X", settings.rotationX),
+    threeNumberField("rotationY", "Y", settings.rotationY),
+    threeNumberField("rotationZ", "Z", settings.rotationZ),
+    threeNumberField("zoom", "Zoom", settings.zoom, "120", "1200", "1"),
+    threeNumberField("offsetX", "Offset X", settings.offsetX),
+    threeNumberField("offsetY", "Offset Y", settings.offsetY),
+    threeNumberField("offsetZ", "Offset Z", settings.offsetZ),
+    threeNumberField("framePadding", "Padding", settings.framePadding, "0", "60", "1"),
+    '</div>',
+    '<div class="mini-btn-row three-inline-actions-row">',
+    '<button type="button" class="mini-btn three-inline-btn" id="three-d-reset-orbit"' + (source ? "" : " disabled") + '>Reset View</button>',
+    '<button type="button" class="mini-btn three-inline-btn" id="three-d-refresh-inline"' + (source ? "" : " disabled") + '>Refresh Src</button>',
+    '</div>',
+    '<div class="three-block-heading three-block-heading-divided">Object Type</div>',
+    '<div class="three-mode-row three-mode-row-spaced">',
     threeModeButton("extrude", "Extrude"),
     threeModeButton("revolve", "Revolve"),
     threeModeButton("inflate", "Inflate"),
     '</div>',
-    source ? '' : '<div class="field-note">This renders the selected object through Three.js and places a PNG back on the canvas. Extrude works best with closed fills. Revolve works best with a side profile path.</div>',
     threeModeFields(settings),
     '</div>'
   ].join("");
@@ -249,11 +360,12 @@ function threeSectionContent(settings, source, relinkDisabled) {
 function threeModeFields(settings) {
   if (threeDState.mode === "revolve") {
     return [
-      '<div class="three-grid three-grid-2">',
-      threeNumberField("revolveSegments", "Segments", settings.revolveSegments, "8", "160", "1"),
-      threeNumberField("revolveAngle", "Angle", settings.revolveAngle, "1", "360", "1"),
+      '<div class="three-block-heading three-block-heading-divided">Shape Properties</div>',
+      '<div class="three-grid two-col-grid">',
+      threeSliderField("revolveAngle", "Angle", settings.revolveAngle, "1", "360", "1"),
+      threeSliderField("revolveSegments", "Segments", settings.revolveSegments, "8", "160", "1"),
       '</div>',
-      '<div class="three-grid three-grid-2">',
+      '<div class="three-grid two-col-grid three-grid-top-gap">',
       '<div class="field"><label>Axis</label><select data-three-field="revolveAxis">' + enumOptions(settings.revolveAxis, [
         ["VERTICAL", "Vertical"],
         ["HORIZONTAL", "Horizontal"]
@@ -264,72 +376,78 @@ function threeModeFields(settings) {
         ["MAX", "Max"]
       ]) + '</select></div>',
       '</div>',
-      '<div class="three-grid three-grid-2">',
-      '<div class="field"><label>Flip</label><label class="check-row"><input type="checkbox" data-three-field="revolveFlip"' + (settings.revolveFlip ? " checked" : "") + '> Profile</label></div>',
-      '<div class="field-note compact-note">Axis and anchor decide which side of the source profile becomes radius.</div>',
+      '<div class="three-toggle-row three-grid-top-gap">',
+      '<label class="check-row"><input type="checkbox" data-three-field="revolveFlip"' + (settings.revolveFlip ? " checked" : "") + '> Flip Profile</label>',
       '</div>'
     ].join("");
   }
 
   if (threeDState.mode === "inflate") {
     return [
-      '<div class="three-grid three-grid-2">',
-      threeNumberField("inflateAmount", "Amount", settings.inflateAmount, "1", "100", "1"),
-      threeNumberField("bevelSegments", "Segments", settings.bevelSegments, "1", "16", "1"),
+      '<div class="three-block-heading three-block-heading-divided">Shape Properties</div>',
+      '<div class="three-grid two-col-grid">',
+      threeSliderField("inflateAmount", "Amount", settings.inflateAmount, "1", "100", "1"),
+      threeSliderField("bevelSegments", "Segments", settings.bevelSegments, "1", "16", "1"),
       '</div>'
     ].join("");
   }
 
   return [
-    '<div class="three-grid three-grid-2">',
-    threeNumberField("depth", "Depth", settings.depth, "1", "400", "1"),
-    threeNumberField("bevelSize", "Bevel Size", settings.bevelSize, "0", "80", "0.5"),
+    '<div class="three-block-heading three-block-heading-divided">Shape Properties</div>',
+    '<div class="three-grid two-col-grid">',
+    threeSliderField("depth", "Depth", settings.depth, "1", "400", "1"),
+    '<div></div>',
     '</div>',
-    '<div class="three-grid three-grid-2">',
-    threeNumberField("bevelThickness", "Bevel Depth", settings.bevelThickness, "0", "80", "0.5"),
-    threeNumberField("bevelSegments", "Segments", settings.bevelSegments, "0", "16", "1"),
+    '<div class="three-block-heading three-block-heading-spaced">Bevel</div>',
+    '<div class="three-grid two-col-grid">',
+    threeSliderField("bevelSize", "Size", settings.bevelSize, "0", "80", "0.5"),
+    threeSliderField("bevelThickness", "Depth", settings.bevelThickness, "0", "80", "0.5"),
+    threeSliderField("bevelSegments", "Segments", settings.bevelSegments, "0", "16", "1"),
+    threeSliderField("bevelOffset", "Offset", settings.bevelOffset, "-40", "40", "0.5"),
     '</div>',
-    '<div class="three-grid three-grid-2">',
-    threeNumberField("bevelOffset", "Bevel Offset", settings.bevelOffset, "-40", "40", "0.5"),
-    '<div class="field"><label>Bevel Profile</label><select data-three-field="bevelProfile">' + enumOptions(settings.bevelProfile, [
+    '<div class="field three-grid-top-gap"><label>Bevel Profile</label><select data-three-field="bevelProfile">' + enumOptions(settings.bevelProfile, [
       ["flat", "Flat"],
       ["round", "Round"],
       ["soft_round", "Soft Round"],
       ["chisel", "Chisel"],
       ["slope", "Slope"]
-    ]) + '</select></div>',
-    '</div>'
+    ]) + '</select></div>'
   ].join("");
 }
 
 function threeNumberField(field, label, value, min, max, step) {
-  return '<div class="field three-input-compact"><label>' + label + '</label><input type="number" data-three-field="' + field + '" value="' + value + '"' +
+  return '<div class="field three-input-compact three-field-row">' +
+    '<label class="three-field-label">' + label + '</label>' +
+    '<input type="number" data-three-field="' + field + '" value="' + value + '"' +
     (min !== undefined ? ' min="' + min + '"' : '') +
     (max !== undefined ? ' max="' + max + '"' : '') +
     (step !== undefined ? ' step="' + step + '"' : '') +
-    '></div>';
+    ' class="three-number-input">' +
+    '</div>';
 }
 
 function threeSliderField(field, label, value, min, max, step) {
-  return [
-    '<div class="three-slider-field">',
-    '<div class="three-slider-head"><label>' + label + '</label><span class="three-slider-value" data-three-value="' + field + '">' + formatThreeDFieldValue(field, value) + '</span></div>',
+  return '<div class="three-slider-field three-field-block">' +
+    '<div class="three-slider-head">' +
+    '<label class="three-field-label">' + label + '</label>' +
+    '<span class="three-slider-value" data-three-value="' + field + '">' + formatThreeDFieldValue(field, value) + '</span>' +
+    '</div>' +
     '<input type="range" data-three-field="' + field + '" value="' + value + '"' +
-      (min !== undefined ? ' min="' + min + '"' : '') +
-      (max !== undefined ? ' max="' + max + '"' : '') +
-      (step !== undefined ? ' step="' + step + '"' : '') +
-      '>',
-    '</div>'
-  ].join("");
+    (min !== undefined ? ' min="' + min + '"' : '') +
+    (max !== undefined ? ' max="' + max + '"' : '') +
+    (step !== undefined ? ' step="' + step + '"' : '') +
+    ' class="three-slider-input">' +
+    '</div>';
 }
 
 function threeColorField(field, label, value, disabled) {
-  return [
-    '<div class="field">',
-    '<label>' + label + '</label>',
-    '<div class="three-color-chip"><input type="color" data-three-field="' + field + '" value="' + value + '"' + (disabled ? ' disabled' : '') + '><span class="three-color-readout">' + escapeHtml(String(value).toUpperCase()) + '</span></div>',
-    '</div>'
-  ].join("");
+  return '<div class="field three-color-field">' +
+    '<label class="three-field-label">' + label + '</label>' +
+    '<div class="three-color-chip">' +
+    '<input type="color" data-three-field="' + field + '" value="' + value + '"' + (disabled ? ' disabled' : '') + ' class="three-color-input">' +
+    '<span class="three-color-readout">' + escapeHtml(String(value).toUpperCase()) + '</span>' +
+    '</div>' +
+    '</div>';
 }
 
 function bindThreeDPanel() {
@@ -349,13 +467,48 @@ function bindThreeDPanel() {
 
   contentEl.querySelectorAll("[data-three-field]").forEach(function (input) {
     input.oninput = function () {
-      updateThreeDSetting(input);
+      if (input.type === "range") {
+        beginThreeDInteraction();
+        var shouldRenderUi = updateThreeDSetting(input);
+        syncThreeDFieldInputs([input.dataset.threeField]);
+        if (shouldRenderUi) {
+          render();
+          return;
+        }
+        scheduleThreeDPreview();
+        return;
+      }
+      if (input.type === "number") {
+        updateThreeDSetting(input);
+        syncThreeDFieldInputs([input.dataset.threeField]);
+        return;
+      }
+      if (input.type === "color") {
+        beginThreeDInteraction();
+      }
+      var shouldRenderUi = updateThreeDSetting(input);
       syncThreeDFieldInputs([input.dataset.threeField]);
-      ensureThreeDPreview();
+      if (shouldRenderUi) {
+        render();
+        return;
+      }
+      scheduleThreeDPreview();
     };
     input.onchange = function () {
-      updateThreeDSetting(input);
-      render();
+      var shouldRenderUi = updateThreeDSetting(input);
+      syncThreeDFieldInputs([input.dataset.threeField]);
+      if (shouldRenderUi) {
+        render();
+        return;
+      }
+      endThreeDInteraction();
+      scheduleThreeDPreview();
+    };
+    input.onblur = function () {
+      if (input.type === "number") {
+        endThreeDInteraction();
+        scheduleThreeDPreview();
+      }
     };
   });
 
@@ -402,35 +555,57 @@ function bindThreeDPanel() {
   }
 }
 
+function beginThreeDInteraction() {
+  threeDPreviewRuntime.interactionMode = true;
+  if (threeDPreviewRuntime.interactionTimer) {
+    window.clearTimeout(threeDPreviewRuntime.interactionTimer);
+    threeDPreviewRuntime.interactionTimer = 0;
+  }
+}
+
+function endThreeDInteraction() {
+  if (threeDPreviewRuntime.interactionTimer) {
+    window.clearTimeout(threeDPreviewRuntime.interactionTimer);
+  }
+  threeDPreviewRuntime.interactionTimer = window.setTimeout(function () {
+    threeDPreviewRuntime.interactionMode = false;
+    threeDPreviewRuntime.interactionTimer = 0;
+    scheduleThreeDPreview();
+  }, 120);
+}
+
 function updateThreeDSetting(input) {
   const key = input.dataset.threeField;
-  if (!key) return;
+  if (!key) return false;
+  if (key === "rotationPreset") {
+    applyThreeDRotationPreset(input.value);
+    return false;
+  }
   if (key === "lightingPreset") {
     threeDState.settings.lightingPreset = input.value;
     applyThreeDLightingPreset(input.value);
     syncThreeDFieldInputs(["ambient", "directional", "lightX", "lightY", "lightZ", "background"]);
-    render();
-    return;
+    return false;
   }
   if (key === "materialPreset") {
     threeDState.settings.materialPreset = input.value;
     applyThreeDMaterialPreset(input.value);
     syncThreeDFieldInputs(["roughness", "metalness", "clearcoat", "transmission", "thickness", "opacity", "emissive", "emissiveIntensity", "flatShading", "iridescence", "iridescenceIOR", "sheen", "sheenRoughness"]);
-    render();
-    return;
+    return false;
   }
   if (input.type === "checkbox") {
     threeDState.settings[key] = input.checked;
-    if (key === "transparentBackground" || key === "useSourceColor") {
-      render();
-    }
-    return;
+    return key === "bloomEnabled" || key === "contactShadow" || key === "useSourceColor";
   }
   if (input.type === "number" || input.type === "range") {
     threeDState.settings[key] = input.value === "" ? 0 : Number(input.value);
-    return;
+    if (key === "rotationX" || key === "rotationY" || key === "rotationZ") {
+      setThreeDRotationPresetCustom();
+    }
+    return false;
   }
   threeDState.settings[key] = input.value;
+  return false;
 }
 
 function relinkThreeDOriginal() {
@@ -459,11 +634,55 @@ function fitThreeDFrame() {
 
 function resetThreeDOrbit() {
   const settings = threeDState.settings;
+  settings.rotationPreset = "custom";
   settings.rotationX = 32;
   settings.rotationY = -28;
   settings.rotationZ = 0;
-  syncThreeDFieldInputs(["rotationX", "rotationY", "rotationZ"]);
-  ensureThreeDPreview();
+  syncThreeDFieldInputs(["rotationPreset", "rotationX", "rotationY", "rotationZ"]);
+  scheduleThreeDPreview();
+}
+
+function setThreeDRotationPresetCustom() {
+  if (threeDState.settings.rotationPreset === "custom") return;
+  threeDState.settings.rotationPreset = "custom";
+  syncThreeDFieldInputs(["rotationPreset"]);
+}
+
+function applyThreeDRotationPreset(preset) {
+  const settings = threeDState.settings;
+  const map = {
+    custom: { x: settings.rotationX, y: settings.rotationY, z: settings.rotationZ },
+    front: { x: 0, y: 0, z: 0 },
+    back: { x: 0, y: 180, z: 0 },
+    left: { x: 0, y: -90, z: 0 },
+    right: { x: 0, y: 90, z: 0 },
+    top: { x: -90, y: 0, z: 0 },
+    bottom: { x: 90, y: 0, z: 0 },
+    offaxis_front: { x: 18, y: -18, z: 0 },
+    offaxis_back: { x: 18, y: 162, z: 0 },
+    offaxis_left: { x: 18, y: -108, z: 0 },
+    offaxis_right: { x: 18, y: 72, z: 0 },
+    offaxis_top: { x: -62, y: 24, z: 0 },
+    offaxis_bottom: { x: 62, y: -24, z: 0 },
+    isometric_left: { x: -35.264, y: -45, z: 0 },
+    isometric_right: { x: -35.264, y: 45, z: 0 },
+    isometric_top: { x: -54.736, y: 45, z: 0 },
+    isometric_bottom: { x: 54.736, y: -45, z: 0 }
+  };
+  const next = map[preset] || map.custom;
+  settings.rotationPreset = preset;
+  settings.rotationX = next.x;
+  settings.rotationY = next.y;
+  settings.rotationZ = next.z;
+  syncThreeDFieldInputs(["rotationPreset", "rotationX", "rotationY", "rotationZ"]);
+  scheduleThreeDPreview();
+}
+
+function normalizeThreeDAngle(value) {
+  let next = Number(value) || 0;
+  while (next > 180) next -= 360;
+  while (next < -180) next += 360;
+  return next;
 }
 
 function ensureThreeDPreview() {
@@ -495,8 +714,18 @@ function ensureThreeDPreview() {
   renderThreeDPreview(canvas, previewImage, overlay, lib);
 }
 
+function scheduleThreeDPreview() {
+  if (threeDPreviewRuntime.previewQueued) return;
+  threeDPreviewRuntime.previewQueued = true;
+  window.requestAnimationFrame(function () {
+    threeDPreviewRuntime.previewQueued = false;
+    ensureThreeDPreview();
+  });
+}
+
 function renderThreeDPreview(canvas, previewImage, overlay, lib) {
   const T = lib.THREE;
+  const fastMode = threeDPreviewRuntime.interactionMode === true;
   if (!T) {
     overlay.textContent = "Three.js is not ready.";
     return;
@@ -511,7 +740,7 @@ function renderThreeDPreview(canvas, previewImage, overlay, lib) {
       alpha: true,
       preserveDrawingBuffer: true
     });
-    configureThreeDRenderer(T, threeDPreviewRuntime.renderer, true);
+    configureThreeDPreviewRenderer(T, threeDPreviewRuntime.renderer, threeDState.settings, fastMode);
     threeDPreviewRuntime.scene = new T.Scene();
     threeDPreviewRuntime.camera = new T.PerspectiveCamera(32, 1, 0.1, 5000);
     bindThreeDCanvasOrbit(canvas);
@@ -519,6 +748,7 @@ function renderThreeDPreview(canvas, previewImage, overlay, lib) {
 
   const width = Math.max(1, canvas.clientWidth || 300);
   const height = Math.max(1, canvas.clientHeight || 240);
+  configureThreeDPreviewRenderer(T, threeDPreviewRuntime.renderer, threeDState.settings, fastMode);
   threeDPreviewRuntime.renderer.setSize(width, height, false);
   threeDPreviewRuntime.camera.aspect = width / height;
   threeDPreviewRuntime.renderer.setClearAlpha(threeDState.settings.transparentBackground ? 0 : 1);
@@ -539,25 +769,63 @@ function renderThreeDPreview(canvas, previewImage, overlay, lib) {
   overlay.textContent = "";
   threeDPreviewRuntime.root = object3d;
   threeDPreviewRuntime.scene.add(object3d);
+  const contactShadow = createThreeDContactShadow(T, object3d, threeDState.settings);
+  if (contactShadow) {
+    threeDPreviewRuntime.scene.add(contactShadow);
+  }
   updateThreeDCameraOrbit(T, threeDPreviewRuntime.camera, threeDState.settings, object3d);
-  if (threeDState.settings.transparentBackground && threeDState.settings.bloomEnabled) {
-    renderThreeDCompositePreview(lib, previewImage, width, height, threeDPreviewRuntime.scene, threeDPreviewRuntime.camera);
-    canvas.classList.add("three-d-canvas-hidden");
-  } else {
+  if (fastMode) {
     if (previewImage) {
       previewImage.removeAttribute("src");
       previewImage.classList.remove("visible");
     }
     canvas.classList.remove("three-d-canvas-hidden");
+    const fallbackBackground = new T.Color(threeDState.settings.background || "#1D1D1D");
+    threeDPreviewRuntime.scene.background = fallbackBackground;
+    threeDPreviewRuntime.renderer.setClearAlpha(1);
+    threeDPreviewRuntime.renderer.setClearColor(fallbackBackground, 1);
+    threeDPreviewRuntime.scene.environment = null;
+    renderThreeDWithEffects(lib, threeDPreviewRuntime.renderer, threeDPreviewRuntime.scene, threeDPreviewRuntime.camera, width, height, {
+      bloomEnabled: false
+    });
+    return;
+  }
+  if (threeDState.settings.transparentBackground && threeDState.settings.bloomEnabled) {
+    renderThreeDCompositePreview(lib, previewImage, width, height, threeDPreviewRuntime.scene, threeDPreviewRuntime.camera);
+    canvas.classList.add("three-d-canvas-hidden");
+  } else {
     renderThreeDWithEffects(lib, threeDPreviewRuntime.renderer, threeDPreviewRuntime.scene, threeDPreviewRuntime.camera, width, height, threeDState.settings);
+    if (shouldUseThreeDCanvasEffects(threeDState.settings)) {
+      renderThreeDProcessedPreview(previewImage, threeDPreviewRuntime.renderer.domElement, threeDState.settings);
+      canvas.classList.add("three-d-canvas-hidden");
+    } else {
+      if (previewImage) {
+        previewImage.removeAttribute("src");
+        previewImage.classList.remove("visible");
+      }
+      canvas.classList.remove("three-d-canvas-hidden");
+    }
   }
 }
 
 function renderThreeDCompositePreview(lib, previewImage, width, height, scene, camera) {
   if (!previewImage) return;
-  const compositeCanvas = compositeTransparentBloomCanvas(lib, scene, camera, width, height);
+  let compositeCanvas = compositeTransparentBloomCanvas(lib, scene, camera, width, height);
+  if (shouldUseThreeDCanvasEffects(threeDState.settings)) {
+    compositeCanvas = applyThreeDCanvasEffects(compositeCanvas, threeDState.settings);
+  }
   if (!compositeCanvas) return;
   const nextUrl = compositeCanvas.toDataURL("image/png");
+  threeDPreviewCompositeUrl = nextUrl;
+  previewImage.src = nextUrl;
+  previewImage.classList.add("visible");
+}
+
+function renderThreeDProcessedPreview(previewImage, sourceCanvas, settings) {
+  if (!previewImage || !sourceCanvas) return;
+  const processed = applyThreeDCanvasEffects(sourceCanvas, settings);
+  if (!processed) return;
+  const nextUrl = processed.toDataURL("image/png");
   threeDPreviewCompositeUrl = nextUrl;
   previewImage.src = nextUrl;
   previewImage.classList.add("visible");
@@ -610,6 +878,7 @@ function clearThreeDScene(T) {
 function bindThreeDCanvasOrbit(canvas) {
   canvas.onmousedown = function (event) {
     if (event.button !== 0) return;
+    beginThreeDInteraction();
     threeDPreviewRuntime.dragging = true;
     threeDPreviewRuntime.dragStartX = event.clientX;
     threeDPreviewRuntime.dragStartY = event.clientY;
@@ -625,14 +894,15 @@ function bindThreeDCanvasOrbit(canvas) {
     const dx = event.clientX - threeDPreviewRuntime.dragStartX;
     const dy = event.clientY - threeDPreviewRuntime.dragStartY;
     if (threeDPreviewRuntime.dragMode === "roll") {
-      threeDState.settings.rotationZ = clampThreeDValue(threeDPreviewRuntime.startRotationZ + dx * 0.35, -180, 180);
+      threeDState.settings.rotationZ = normalizeThreeDAngle(threeDPreviewRuntime.startRotationZ + dx * 0.45);
       syncThreeDFieldInputs(["rotationZ"]);
     } else {
-      threeDState.settings.rotationY = clampThreeDValue(threeDPreviewRuntime.startRotationY + dx * 0.22, -180, 180);
-      threeDState.settings.rotationX = clampThreeDValue(threeDPreviewRuntime.startRotationX - dy * 0.22, -89, 89);
+      threeDState.settings.rotationY = normalizeThreeDAngle(threeDPreviewRuntime.startRotationY + dx * 0.45);
+      threeDState.settings.rotationX = normalizeThreeDAngle(threeDPreviewRuntime.startRotationX + dy * 0.45);
       syncThreeDFieldInputs(["rotationX", "rotationY"]);
     }
-    ensureThreeDPreview();
+    setThreeDRotationPresetCustom();
+    scheduleThreeDPreview();
   };
 
   canvas.onmouseup = function () {
@@ -645,10 +915,12 @@ function bindThreeDCanvasOrbit(canvas) {
 
   canvas.onwheel = function (event) {
     event.preventDefault();
+    beginThreeDInteraction();
     const delta = event.deltaY > 0 ? 24 : -24;
     threeDState.settings.zoom = clampThreeDValue((threeDState.settings.zoom || 420) + delta, 120, 1200);
     syncThreeDFieldInputs(["zoom"]);
-    ensureThreeDPreview();
+    scheduleThreeDPreview();
+    endThreeDInteraction();
   };
 }
 
@@ -656,6 +928,7 @@ function stopThreeDCanvasOrbit(canvas) {
   if (!threeDPreviewRuntime.dragging) return;
   threeDPreviewRuntime.dragging = false;
   canvas.style.cursor = "";
+  endThreeDInteraction();
 }
 
 function disposeThreeDNode(node, T) {
@@ -666,16 +939,39 @@ function disposeThreeDNode(node, T) {
   if (node.material) {
     if (Array.isArray(node.material)) {
       node.material.forEach(function (material) {
-        if (material && typeof material.dispose === "function") material.dispose();
+        disposeThreeDMaterial(material);
       });
-    } else if (typeof node.material.dispose === "function") {
-      node.material.dispose();
+    } else {
+      disposeThreeDMaterial(node.material);
     }
   }
   if (node.children && node.children.length) {
     node.children.forEach(function (child) {
       disposeThreeDNode(child, T);
     });
+  }
+}
+
+function disposeThreeDMaterial(material) {
+  if (!material) return;
+  [
+    "map",
+    "alphaMap",
+    "normalMap",
+    "bumpMap",
+    "roughnessMap",
+    "metalnessMap",
+    "aoMap",
+    "displacementMap",
+    "envMap"
+  ].forEach(function (key) {
+    if (material[key] && typeof material[key].dispose === "function") {
+      material[key].dispose();
+      material[key] = null;
+    }
+  });
+  if (typeof material.dispose === "function") {
+    material.dispose();
   }
 }
 
@@ -695,6 +991,11 @@ function disposeThreeDPreview() {
   threeDPreviewRuntime.envTarget = null;
   threeDPreviewRuntime.dragging = false;
   threeDPreviewRuntime.dragMode = "orbit";
+  threeDPreviewRuntime.interactionMode = false;
+  if (threeDPreviewRuntime.interactionTimer) {
+    window.clearTimeout(threeDPreviewRuntime.interactionTimer);
+    threeDPreviewRuntime.interactionTimer = 0;
+  }
 }
 
 function threeDLib() {
@@ -721,6 +1022,8 @@ function buildThreeDObject(lib, source, settings, mode) {
   fitThreeDObject(root, T, settings);
   const pivot = new T.Group();
   pivot.add(root);
+  pivot.rotation.x = T.MathUtils.degToRad(settings.rotationX || 0);
+  pivot.rotation.y = T.MathUtils.degToRad(settings.rotationY || 0);
   pivot.rotation.z = T.MathUtils.degToRad(settings.rotationZ);
   return pivot;
 }
@@ -733,7 +1036,7 @@ function buildExtrudeObject(lib, data, settings) {
     shapes.forEach(function (shape) {
       const geometry = new T.ExtrudeGeometry(shape, buildExtrudeSettings(settings));
       geometry.computeVertexNormals();
-      const mesh = new T.Mesh(geometry, threeDMaterialForPath(T, path, settings));
+      const mesh = new T.Mesh(geometry, createThreeDMaterialSet(T, path, settings, true));
       group.add(mesh);
     });
   });
@@ -759,7 +1062,7 @@ function buildInflateObject(lib, data, settings) {
         steps: 1
       });
       geometry.computeVertexNormals();
-      const mesh = new T.Mesh(geometry, threeDMaterialForPath(T, path, settings));
+      const mesh = new T.Mesh(geometry, createThreeDMaterialSet(T, path, settings, true));
       group.add(mesh);
     });
   });
@@ -772,7 +1075,7 @@ function buildRevolveObject(T, data, settings) {
   if (!profile || profile.length < 3) return null;
   const geometry = new T.LatheGeometry(profile, Math.max(8, Math.round(settings.revolveSegments)), 0, T.MathUtils.degToRad(Math.max(1, settings.revolveAngle)));
   geometry.computeVertexNormals();
-  const mesh = new T.Mesh(geometry, threeDMaterialForPath(T, data.paths[0], settings));
+  const mesh = new T.Mesh(geometry, threeDMaterialForPath(T, data.paths[0], settings, "base"));
   return mesh;
 }
 
@@ -821,7 +1124,12 @@ function revolveAnchorValue(anchor, min, max) {
   return min;
 }
 
-function threeDMaterialForPath(T, path, settings) {
+function createThreeDMaterialSet(T, path, settings, allowSideMaterial) {
+  return threeDMaterialForPath(T, path, settings, "base");
+}
+
+function threeDMaterialForPath(T, path, settings, variant) {
+  const baseVariant = variant || "base";
   const color = settings.useSourceColor && path && path.color ? path.color : new T.Color(settings.color);
   const materialConfig = {
     color: color,
@@ -863,6 +1171,37 @@ function fitThreeDObject(object3d, T, settings) {
   object3d.position.z += offsetZ;
 }
 
+function createThreeDContactShadow(T, object3d, settings) {
+  if (!settings.contactShadow) return null;
+  const box = new T.Box3().setFromObject(object3d);
+  const center = box.getCenter(new T.Vector3());
+  const size = box.getSize(new T.Vector3());
+  const width = Math.max(24, size.x * 0.95 * Math.max(0.6, settings.contactShadowScale || 1));
+  const height = Math.max(16, Math.min(size.y * 0.28, size.x * 0.34) * Math.max(0.6, settings.contactShadowScale || 1));
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  const gradient = context.createRadialGradient(128, 64, 8, 128, 64, 92);
+  gradient.addColorStop(0, "rgba(0,0,0," + clampThreeDValue(settings.contactShadowOpacity || 0.24, 0, 1) + ")");
+  gradient.addColorStop(0.45, "rgba(0,0,0," + clampThreeDValue((settings.contactShadowOpacity || 0.24) * 0.52, 0, 1) + ")");
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  const texture = new T.CanvasTexture(canvas);
+  const material = new T.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false
+  });
+  const shadow = new T.Mesh(new T.PlaneGeometry(width, height), material);
+  shadow.position.set(center.x, box.min.y + height * 0.18, center.z - Math.max(2, size.z * 0.45));
+  shadow.renderOrder = -1;
+  return shadow;
+}
+
 function updateThreeDCameraOrbit(T, camera, settings, object3d) {
   if (!T || !camera) return;
   const target = new T.Vector3(0, 0, 0);
@@ -874,14 +1213,9 @@ function updateThreeDCameraOrbit(T, camera, settings, object3d) {
   threeDPreviewRuntime.orbitTargetY = target.y;
   threeDPreviewRuntime.orbitTargetZ = target.z;
   const radius = Math.max(120, settings.zoom || 420);
-  const pitch = T.MathUtils.degToRad(clampThreeDValue(settings.rotationX || 0, -89, 89));
-  const yaw = T.MathUtils.degToRad(settings.rotationY || 0);
-  camera.position.set(
-    target.x + Math.sin(yaw) * Math.cos(pitch) * radius,
-    target.y + Math.sin(pitch) * radius,
-    target.z + Math.cos(yaw) * Math.cos(pitch) * radius
-  );
+  camera.position.set(target.x, target.y, target.z + radius);
   camera.lookAt(target.x, target.y, target.z);
+  camera.up.set(0, 1, 0);
   camera.updateProjectionMatrix();
 }
 
@@ -889,13 +1223,14 @@ function exportThreeDRender() {
   if (!threeDPreviewRuntime.renderer || !threeDPreviewRuntime.canvas || !threeDState.source) return;
   const scale = Math.max(1, Math.min(4, Math.round(threeDState.settings.exportScale || 1)));
   const separateBloom = threeDState.settings.bloomEnabled && threeDState.settings.bloomSeparate;
-  const baseResult = scaledThreeDExportCanvas(scale, threeDState.source, separateBloom ? "base" : "combined");
+  const exportPlan = createThreeDExportPlan(scale, threeDState.source);
+  const baseResult = scaledThreeDExportCanvas(exportPlan, threeDState.source, separateBloom ? "base" : "combined");
   const dataUrl = baseResult && baseResult.canvas ? baseResult.canvas.toDataURL("image/png") : "";
   let bloomDataUrl = "";
   let bloomBlendMode = "";
   let bloomOpacity = 100;
   if (separateBloom) {
-    const bloomResult = scaledThreeDExportCanvas(scale, threeDState.source, "bloom");
+    const bloomResult = scaledThreeDExportCanvas(exportPlan, threeDState.source, "bloom");
     bloomDataUrl = bloomResult && bloomResult.canvas ? bloomResult.canvas.toDataURL("image/png") : "";
     if (bloomResult && bloomResult.renderer) {
       bloomResult.renderer.dispose();
@@ -920,28 +1255,57 @@ function exportThreeDRender() {
     nodeType: threeDState.source.nodeType || "",
     svgSource: threeDState.source.svg || "",
     settings: cloneThreeDSettings(),
-    sourceNodeId: threeDState.source.sourceNodeId || ""
+    sourceNodeId: threeDState.source.sourceNodeId || "",
+    exportWidth: exportPlan.width,
+    exportHeight: exportPlan.height,
+    exportScaleApplied: exportPlan.effectiveScale
   });
 }
 
-function scaledThreeDExportCanvas(scale, source, mode) {
-  if (!threeDPreviewRuntime.renderer || !threeDState.source || scale < 1) return null;
-  const lib = threeDLib();
-  if (!lib || !lib.THREE) return null;
-  const T = lib.THREE;
+function createThreeDExportPlan(scale, source) {
   const sourceWidth = source && source.width ? Number(source.width) : threeDPreviewRuntime.canvas.width;
   const sourceHeight = source && source.height ? Number(source.height) : threeDPreviewRuntime.canvas.height;
   const ratio = Math.max(0.35, Math.min(3.5, sourceWidth / Math.max(1, sourceHeight)));
   const baseWidth = Math.max(256, Math.round(Math.min(2048, sourceWidth * 2)));
-  const width = Math.max(1, baseWidth);
-  const height = Math.max(1, Math.round(baseWidth / ratio));
+  const baseHeight = Math.max(1, Math.round(baseWidth / ratio));
+  let width = Math.max(1, Math.round(baseWidth * scale));
+  let height = Math.max(1, Math.round(baseHeight * scale));
+  const dimensionScale = Math.min(
+    1,
+    THREE_D_EXPORT_MAX_DIMENSION / Math.max(1, width),
+    THREE_D_EXPORT_MAX_DIMENSION / Math.max(1, height)
+  );
+  const pixelScale = Math.min(
+    1,
+    Math.sqrt(THREE_D_EXPORT_MAX_PIXELS / Math.max(1, width * height))
+  );
+  const reduction = Math.min(1, dimensionScale, pixelScale);
+  if (reduction < 1) {
+    width = Math.max(256, Math.round(width * reduction));
+    height = Math.max(256, Math.round(height * reduction));
+  }
+  return {
+    width: width,
+    height: height,
+    effectiveScale: Number((scale * reduction).toFixed(2)),
+    reduced: reduction < 0.999
+  };
+}
+
+function scaledThreeDExportCanvas(exportPlan, source, mode) {
+  if (!threeDPreviewRuntime.renderer || !threeDState.source || !exportPlan) return null;
+  const lib = threeDLib();
+  if (!lib || !lib.THREE) return null;
+  const T = lib.THREE;
+  const width = Math.max(1, Math.round(exportPlan.width));
+  const height = Math.max(1, Math.round(exportPlan.height));
   const renderer = new T.WebGLRenderer({
     antialias: true,
     alpha: true,
     preserveDrawingBuffer: true
   });
-  configureThreeDRenderer(T, renderer, false);
-  renderer.setSize(width * scale, height * scale, false);
+  configureThreeDRenderer(T, renderer, false, threeDState.settings);
+  renderer.setSize(width, height, false);
   renderer.setClearAlpha(threeDState.settings.transparentBackground ? 0 : 1);
   if (!threeDState.settings.transparentBackground) {
     renderer.setClearColor(threeDState.settings.background);
@@ -955,17 +1319,24 @@ function scaledThreeDExportCanvas(scale, source, mode) {
     return null;
   }
   scene.add(object3d);
+  const contactShadow = createThreeDContactShadow(T, object3d, threeDState.settings);
+  if (contactShadow) {
+    scene.add(contactShadow);
+  }
   const camera = new T.PerspectiveCamera(32, width / height, 0.1, 5000);
   updateThreeDCameraOrbit(T, camera, threeDState.settings, object3d);
   let outputCanvas = renderer.domElement;
   if (mode === "bloom") {
-    outputCanvas = renderBloomOnlyCanvas(lib, scene, camera, width * scale, height * scale) || renderer.domElement;
+    outputCanvas = renderBloomOnlyCanvas(lib, scene, camera, width, height) || renderer.domElement;
   } else if (mode === "base") {
     renderer.render(scene, camera);
   } else if (threeDState.settings.transparentBackground && threeDState.settings.bloomEnabled && lib.EffectComposer && lib.RenderPass && lib.UnrealBloomPass) {
-    outputCanvas = compositeTransparentBloomExport(lib, scene, camera, width * scale, height * scale, renderer.domElement);
+    outputCanvas = compositeTransparentBloomExport(lib, scene, camera, width, height, renderer.domElement);
   } else {
-    renderThreeDWithEffects(lib, renderer, scene, camera, width * scale, height * scale, threeDState.settings);
+    renderThreeDWithEffects(lib, renderer, scene, camera, width, height, threeDState.settings);
+  }
+  if (mode !== "bloom" && shouldUseThreeDCanvasEffects(threeDState.settings)) {
+    outputCanvas = applyThreeDCanvasEffects(outputCanvas, threeDState.settings);
   }
   if (exportEnvironment) {
     if (exportEnvironment.texture && typeof exportEnvironment.texture.dispose === "function") {
@@ -994,7 +1365,7 @@ function renderBloomOnlyCanvas(lib, scene, camera, width, height) {
     alpha: true,
     preserveDrawingBuffer: true
   });
-  configureThreeDRenderer(T, bloomRenderer, false);
+  configureThreeDRenderer(T, bloomRenderer, false, threeDState.settings);
   bloomRenderer.setSize(width, height, false);
   bloomRenderer.setClearColor(0x000000, 1);
   const composer = new lib.EffectComposer(bloomRenderer);
@@ -1035,7 +1406,7 @@ function compositeTransparentBloomCanvas(lib, scene, camera, width, height) {
     alpha: true,
     preserveDrawingBuffer: true
   });
-  configureThreeDRenderer(T, baseRenderer, false);
+  configureThreeDRenderer(T, baseRenderer, false, threeDState.settings);
   baseRenderer.setSize(width, height, false);
   baseRenderer.setClearColor(0x000000, 0);
   baseRenderer.render(scene, camera);
@@ -1045,7 +1416,7 @@ function compositeTransparentBloomCanvas(lib, scene, camera, width, height) {
     alpha: true,
     preserveDrawingBuffer: true
   });
-  configureThreeDRenderer(T, bloomRenderer, false);
+  configureThreeDRenderer(T, bloomRenderer, false, threeDState.settings);
   bloomRenderer.setSize(width, height, false);
   bloomRenderer.setClearColor(0x000000, 0);
   const composer = new lib.EffectComposer(bloomRenderer);
@@ -1116,6 +1487,57 @@ function stripBlackBackground(sourceCanvas, width, height) {
   }
   context.putImageData(imageData, 0, 0);
   return canvas;
+}
+
+function shouldUseThreeDCanvasEffects(settings) {
+  return Math.abs(Number(settings.contrast) || 0) > 0.001 ||
+    (Number(settings.grainAmount) || 0) > 0.001 ||
+    (Number(settings.chromaticAberration) || 0) > 0.001;
+}
+
+function applyThreeDCanvasEffects(sourceCanvas, settings) {
+  if (!sourceCanvas) return sourceCanvas;
+  const canvas = document.createElement("canvas");
+  canvas.width = sourceCanvas.width;
+  canvas.height = sourceCanvas.height;
+  const context = canvas.getContext("2d");
+  if (!context) return sourceCanvas;
+  context.drawImage(sourceCanvas, 0, 0);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const original = new Uint8ClampedArray(data);
+  const contrast = Number(settings.contrast) || 0;
+  const grain = Math.max(0, Number(settings.grainAmount) || 0);
+  const chroma = Math.max(0, Number(settings.chromaticAberration) || 0);
+  const shift = Math.round(chroma);
+  const contrastFactor = 1 + contrast * 1.45;
+  for (var y = 0; y < canvas.height; y += 1) {
+    for (var x = 0; x < canvas.width; x += 1) {
+      var index = (y * canvas.width + x) * 4;
+      if (original[index + 3] === 0) continue;
+      if (shift > 0) {
+        var redIndex = (y * canvas.width + clampPixel(x - shift, 0, canvas.width - 1)) * 4;
+        var blueIndex = (y * canvas.width + clampPixel(x + shift, 0, canvas.width - 1)) * 4;
+        data[index] = original[redIndex];
+        data[index + 2] = original[blueIndex + 2];
+      }
+      data[index] = clampPixel((data[index] - 128) * contrastFactor + 128, 0, 255);
+      data[index + 1] = clampPixel((data[index + 1] - 128) * contrastFactor + 128, 0, 255);
+      data[index + 2] = clampPixel((data[index + 2] - 128) * contrastFactor + 128, 0, 255);
+      if (grain > 0) {
+        var noise = (Math.random() - 0.5) * 255 * grain;
+        data[index] = clampPixel(data[index] + noise, 0, 255);
+        data[index + 1] = clampPixel(data[index + 1] + noise, 0, 255);
+        data[index + 2] = clampPixel(data[index + 2] + noise, 0, 255);
+      }
+    }
+  }
+  context.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+function clampPixel(value, min, max) {
+  return Math.min(max, Math.max(min, Math.round(value)));
 }
 
 function cloneThreeDSettings() {
@@ -1597,7 +2019,7 @@ function threeDPreviewModalHtml() {
     '<button class="command-btn" id="three-d-modal-export"' + (source ? "" : " disabled") + '>' + actionLabel + '</button>',
     '<button class="command-btn" id="three-d-modal-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original</button>',
     '</div>',
-    '<div class="three-d-help muted">Drag orbits X/Y. Shift + drag rolls Z. Mouse wheel zooms.</div>',
+    '<div class="three-d-help muted">Drag rotates X/Y. Shift + drag rotates Z. Mouse wheel zooms.</div>',
     '</div>'
   ].join("");
 }

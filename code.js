@@ -964,11 +964,16 @@ async function detachAppearance() {
 
 async function sendThreeDSource() {
   const selection = figma.currentPage.selection;
-  if (selection.length !== 1) {
+  if (!selection.length) {
     figma.ui.postMessage({
       type: "3d-source",
       source: null
     });
+    return;
+  }
+
+  if (selection.length > 1) {
+    await sendMultipleNodesAsThreeDSource(selection);
     return;
   }
 
@@ -991,6 +996,113 @@ async function sendThreeDSource() {
   }
 
   await sendNodeAsThreeDSource(node, false, "");
+}
+
+async function sendMultipleNodesAsThreeDSource(selection) {
+  const exportable = selection.filter(function (node) {
+    return Boolean(node && typeof node.exportAsync === "function" && "width" in node && "height" in node);
+  });
+  if (exportable.length < 2) {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: null,
+      error: "Select two or more drawable objects, or one grouped object."
+    });
+    return;
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  exportable.forEach(function (node) {
+    const bounds = getThreeDNodeBounds(node);
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    maxX = Math.max(maxX, bounds.x + bounds.width);
+    maxY = Math.max(maxY, bounds.y + bounds.height);
+  });
+
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+
+  try {
+    const parts = [];
+    for (let index = 0; index < exportable.length; index += 1) {
+      const node = exportable[index];
+      const bounds = getThreeDNodeBounds(node);
+      const svgBytes = await node.exportAsync({
+        format: "SVG",
+        contentsOnly: true,
+        useAbsoluteBounds: true,
+        svgOutlineText: true,
+        svgSimplifyStroke: false
+      });
+      const svgText = decodeUtf8Bytes(svgBytes);
+      parts.push(
+        '<svg x="' + roundThreeDNumber(bounds.x - minX) + '" y="' + roundThreeDNumber(bounds.y - minY) +
+        '" width="' + roundThreeDNumber(bounds.width) + '" height="' + roundThreeDNumber(bounds.height) +
+        '" viewBox="0 0 ' + roundThreeDNumber(bounds.width) + ' ' + roundThreeDNumber(bounds.height) +
+        '" overflow="visible">' + extractThreeDSvgInner(svgText) + '</svg>'
+      );
+    }
+    const combinedSvg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + roundThreeDNumber(width) + '" height="' + roundThreeDNumber(height) + '" viewBox="0 0 ' + roundThreeDNumber(width) + ' ' + roundThreeDNumber(height) + '">',
+      parts.join(""),
+      "</svg>"
+    ].join("");
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: {
+        name: exportable.length + " Objects",
+        nodeType: "MULTI",
+        width: width,
+        height: height,
+        svg: combinedSvg,
+        renderNodeId: "",
+        fromRender: false,
+        sourceNodeId: ""
+      }
+    });
+  } catch (error) {
+    figma.ui.postMessage({
+      type: "3d-source",
+      source: null,
+      error: error && error.message ? error.message : "Could not export the selected objects as one 3D source."
+    });
+  }
+}
+
+function getThreeDNodeBounds(node) {
+  const absolute = node.absoluteRenderBounds || node.absoluteBoundingBox;
+  if (absolute) {
+    return {
+      x: Number(absolute.x) || 0,
+      y: Number(absolute.y) || 0,
+      width: Math.max(1, Number(absolute.width) || 1),
+      height: Math.max(1, Number(absolute.height) || 1)
+    };
+  }
+  return {
+    x: "x" in node ? Number(node.x) || 0 : 0,
+    y: "y" in node ? Number(node.y) || 0 : 0,
+    width: "width" in node ? Math.max(1, Number(node.width) || 1) : 1,
+    height: "height" in node ? Math.max(1, Number(node.height) || 1) : 1
+  };
+}
+
+function extractThreeDSvgInner(svgText) {
+  const text = String(svgText || "");
+  const openEnd = text.indexOf(">");
+  const closeStart = text.lastIndexOf("</svg>");
+  if (openEnd === -1 || closeStart === -1 || closeStart <= openEnd) {
+    return text;
+  }
+  return text.slice(openEnd + 1, closeStart);
+}
+
+function roundThreeDNumber(value) {
+  return Number((Number(value) || 0).toFixed(3));
 }
 
 async function sendThreeDSourceById(nodeId, renderNodeId) {
@@ -1022,7 +1134,7 @@ async function placeThreeDRender(payload) {
     throw new Error("3D preview image is missing.");
   }
 
-  const image = figma.createImage(imageBytes);
+  const image = createThreeDImageOrThrow(imageBytes, "base render");
   const selection = figma.currentPage.selection;
   const selectedNode = selection.length === 1 ? selection[0] : null;
   const updatingExisting = isThreeDRenderNode(selectedNode);
@@ -1056,7 +1168,7 @@ async function placeThreeDRender(payload) {
     baseRect.y = 0;
 
     const bloomBytes = decodeBase64Png(payload && payload.bloomDataUrl);
-    const bloomImage = bloomBytes ? figma.createImage(bloomBytes) : null;
+    const bloomImage = bloomBytes ? createThreeDImageOrThrow(bloomBytes, "bloom flare") : null;
     const bloomRect = ensureThreeDFrameChild(container, "Bloom");
     if (bloomImage) {
       applyThreeDImageFill(bloomRect, bloomImage.hash);
@@ -1094,6 +1206,18 @@ async function placeThreeDRender(payload) {
   writeThreeDRenderData(container, payload);
   figma.currentPage.selection = [container];
   figma.notify(updatingExisting ? "3D render updated." : "3D render placed on canvas.");
+}
+
+function createThreeDImageOrThrow(bytes, label) {
+  try {
+    return figma.createImage(bytes);
+  } catch (error) {
+    const message = error && error.message ? error.message : "";
+    if (/image is too large/i.test(message)) {
+      throw new Error("3D " + label + " is too large for Figma. Lower Export scale, or turn off Bloom / Split Flare for this render.");
+    }
+    throw error;
+  }
 }
 
 function applyThreeDImageFill(node, imageHash) {
