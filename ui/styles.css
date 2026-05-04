@@ -651,6 +651,178 @@ button:disabled {
   pointer-events: none;
 }
 
+.three-d-light-gizmos {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.three-light-line {
+  position: absolute;
+  height: 1px;
+  transform-origin: 0 0;
+  background: linear-gradient(90deg, rgba(255, 221, 121, 0.16), rgba(255, 221, 121, 0.9));
+  box-shadow: 0 0 6px rgba(255, 213, 107, 0.35);
+}
+
+.three-light-line.is-soft {
+  opacity: 0.72;
+  filter: blur(0.35px);
+}
+
+.three-light-target,
+.three-light-dot,
+.three-light-source {
+  position: absolute;
+  display: grid;
+  place-items: center;
+}
+
+.three-light-target {
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.three-light-dot {
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 224, 122, 0.12);
+  color: rgba(255, 239, 192, 0.96);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.2), 0 0 10px rgba(255, 220, 96, 0.18);
+}
+
+.three-light-source {
+  width: 36px;
+  height: 36px;
+  margin-left: -18px;
+  margin-top: -18px;
+  cursor: grab;
+  pointer-events: auto;
+  z-index: 4;
+}
+
+.three-light-source:active {
+  cursor: grabbing;
+}
+
+.three-light-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 237, 163, 0.92);
+  background: radial-gradient(circle at 35% 35%, #fff6cb, #ffcf52 68%, #9d6b00 100%);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.25), 0 0 12px rgba(255, 213, 90, 0.55);
+}
+
+.three-light-halo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 229, 140, 0.42), rgba(255, 229, 140, 0.08) 62%, rgba(255, 229, 140, 0) 100%);
+  filter: blur(0.3px);
+}
+
+.three-light-arrow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.three-light-arrow-shaft {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 22px;
+  height: 2px;
+  border-radius: 999px;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, rgba(255, 237, 174, 0), rgba(255, 237, 174, 0.96));
+  box-shadow: 0 0 8px rgba(255, 224, 122, 0.35);
+}
+
+.three-light-arrow-head {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translateY(-50%);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 10px solid rgba(255, 237, 174, 0.95);
+  filter: drop-shadow(0 0 6px rgba(255, 224, 122, 0.4));
+}
+
+.three-light-ray {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  transform-origin: 0 50%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 237, 174, 0.95), rgba(255, 237, 174, 0));
+  box-shadow: 0 0 6px rgba(255, 224, 122, 0.28);
+  pointer-events: none;
+}
+
+.three-light-cone {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform-origin: 0 50%;
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+  border: 1px solid rgba(255, 237, 174, 0.42);
+  background: linear-gradient(90deg, rgba(255, 224, 122, 0.22), rgba(255, 224, 122, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 12px rgba(255, 224, 122, 0.16);
+  pointer-events: none;
+}
+
+.three-light-type-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.three-light-type-btn {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  background: #242424;
+  color: #c7c7c7;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.three-light-type-btn.active {
+  border-color: #8aa4ff;
+  background: #3e4d74;
+  color: #fff;
+}
+
 .three-mode-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

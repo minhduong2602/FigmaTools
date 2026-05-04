@@ -7,6 +7,7 @@ const simplifyJsPath = path.join(root, "node_modules", "simplify-js", "simplify.
 const threeModulePath = path.join(root, "node_modules", "three", "build", "three.module.min.js");
 const threeCorePath = path.join(root, "node_modules", "three", "build", "three.core.min.js");
 const svgLoaderPath = path.join(root, "node_modules", "three", "examples", "jsm", "loaders", "SVGLoader.js");
+const objExporterPath = path.join(root, "node_modules", "three", "examples", "jsm", "exporters", "OBJExporter.js");
 const effectComposerPath = path.join(root, "node_modules", "three", "examples", "jsm", "postprocessing", "EffectComposer.js");
 const renderPassPath = path.join(root, "node_modules", "three", "examples", "jsm", "postprocessing", "RenderPass.js");
 const unrealBloomPassPath = path.join(root, "node_modules", "three", "examples", "jsm", "postprocessing", "UnrealBloomPass.js");
@@ -151,24 +152,30 @@ function buildUiModuleScript() {
   const svgLoaderUrl = moduleDataUrl(svgLoaderPath, [
     ["from 'three';", "from '" + threeUrl + "';"]
   ]);
+  const objExporterUrl = moduleDataUrl(objExporterPath, [
+    ["from 'three';", "from '" + threeUrl + "';"]
+  ]);
   return [
     "(async function () {",
     "  try {",
     "    var modules = await Promise.all([",
     "      import('" + threeUrl + "'),",
     "      import('" + svgLoaderUrl + "'),",
+    "      import('" + objExporterUrl + "'),",
     "      import('" + effectComposerUrl + "'),",
     "      import('" + renderPassUrl + "'),",
     "      import('" + unrealBloomPassUrl + "')",
     "    ]);",
     "    var threeModule = modules[0];",
     "    var svgLoaderModule = modules[1];",
-    "    var effectComposerModule = modules[2];",
-    "    var renderPassModule = modules[3];",
-    "    var unrealBloomPassModule = modules[4];",
+    "    var objExporterModule = modules[2];",
+    "    var effectComposerModule = modules[3];",
+    "    var renderPassModule = modules[4];",
+    "    var unrealBloomPassModule = modules[5];",
     "    window.Appearance3D = {",
     "      THREE: threeModule,",
     "      SVGLoader: svgLoaderModule.SVGLoader || null,",
+    "      OBJExporter: objExporterModule.OBJExporter || null,",
     "      EffectComposer: effectComposerModule.EffectComposer || null,",
     "      RenderPass: renderPassModule.RenderPass || null,",
     "      UnrealBloomPass: unrealBloomPassModule.UnrealBloomPass || null",

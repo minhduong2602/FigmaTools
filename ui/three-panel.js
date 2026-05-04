@@ -15,6 +15,19 @@ const threeDPreviewRuntime = {
   startRotationX: 0,
   startRotationY: 0,
   startRotationZ: 0,
+  startQuaternion: null,
+  dragStartVector: null,
+  lightDragging: false,
+  lightDragMode: "screen",
+  lightStartX: 0,
+  lightStartY: 0,
+  lightStartZ: 0,
+  lightScreenStartX: 0,
+  lightScreenStartY: 0,
+  lightDragPlane: null,
+  lightDragPoint: null,
+  lightMoveHandler: null,
+  lightUpHandler: null,
   previewQueued: false,
   interactionMode: false,
   interactionTimer: 0
@@ -22,6 +35,7 @@ const threeDPreviewRuntime = {
 
 const THREE_D_EXPORT_MAX_DIMENSION = 3072;
 const THREE_D_EXPORT_MAX_PIXELS = 6291456;
+const THREE_D_LIGHT_SAFE_RANGE = 240;
 
 window.addEventListener("appearance-3d-ready", function () {
   if (activeTab === "three-d") {
@@ -30,7 +44,7 @@ window.addEventListener("appearance-3d-ready", function () {
 });
 
 function requestThreeDSource() {
-  if (state.selectedCount !== 1) {
+  if (state.selectedCount < 1) {
     threeDState.requestPending = false;
     threeDState.source = null;
     return;
@@ -42,10 +56,10 @@ function requestThreeDSource() {
 
 function renderThreeDPanel() {
   closeModalIfAppearanceOnly();
-  const hasOne = state.selectedCount === 1;
-  threeDRefreshBtn.disabled = !hasOne;
-  threeDExportBtn.disabled = !hasOne || !threeDState.source;
-  if (!hasOne) {
+  const hasSelection = state.selectedCount > 0;
+  threeDRefreshBtn.disabled = !hasSelection;
+  threeDExportBtn.disabled = !threeDState.source;
+  if (!hasSelection) {
     threeDState.source = null;
     statusEl.textContent = "Select one object for 3D.";
   } else if (threeDState.requestPending) {
@@ -84,6 +98,7 @@ function threeDPanelTemplate() {
     '<div class="three-d-preview-stage three-d-preview-stage-fixed">',
     '<canvas id="three-d-canvas"></canvas>',
     '<img id="three-d-preview-image" class="three-d-preview-image" alt="">',
+    '<div id="three-d-light-gizmos" class="three-d-light-gizmos"></div>',
     '<div id="three-d-overlay" class="three-d-overlay"></div>',
     '</div>',
     '<div class="three-d-preview-actions three-d-panel-actions three-preview-side-actions">',
@@ -92,7 +107,7 @@ function threeDPanelTemplate() {
     '<button class="command-btn three-side-btn three-side-btn-primary" id="three-d-inline-export"' + (source ? '' : ' disabled') + '>' + actionLabel + '</button>',
     '</div>',
     '</div>',
-    '<div class="three-preview-tip">Drag rotates X/Y. Shift + drag rotates Z. Scroll to zoom.</div>',
+    '<div class="three-preview-tip">Drag rotates freely. Shift + drag rolls Z. Drag the light source directly in the preview. Wheel over the source adjusts distance.</div>',
     '</section>',
     '<section class="three-panel-card three-d-sections-card three-panel-surface">',
     '<div class="three-section-tabs three-section-tabs-four">',
@@ -177,6 +192,11 @@ function threeSectionButton(section, label) {
   return '<button class="three-section-btn' + (active ? ' active' : '') + '" data-three-section="' + section + '">' + label + '</button>';
 }
 
+function threeLightTypeButton(type, label) {
+  const active = (threeDState.settings.lightType || "directional") === type;
+  return '<button class="three-light-type-btn' + (active ? ' active' : '') + '" data-three-light-type="' + type + '">' + label + '</button>';
+}
+
 function threeSectionContent(settings, source, relinkDisabled) {
   if (threeDState.section === "camera") {
     return [
@@ -200,16 +220,30 @@ function threeSectionContent(settings, source, relinkDisabled) {
       ]) + '</select></div>',
       '</div>',
       '<div class="three-grid two-col-grid">',
-      threeSliderField("ambient", "Ambient Light", settings.ambient, "0", "3", "0.05"),
-      threeSliderField("directional", "Direct Light", settings.directional, "0", "4", "0.05"),
-      threeSliderField("environmentStrength", "Env Intensity", settings.environmentStrength, "0", "4", "0.05"),
+      threeNumberField("ambient", "Ambient Light", settings.ambient, undefined, undefined, "0.05"),
+      threeNumberField("environmentStrength", "Env Intensity", settings.environmentStrength, undefined, undefined, "0.05"),
+      '</div>',
+      '<div class="three-block-subhead">Main Light</div>',
+      '<div class="three-light-type-row">',
+      threeLightTypeButton("point", "Point"),
+      threeLightTypeButton("directional", "Directional"),
+      threeLightTypeButton("spot", "Spot"),
+      '</div>',
+      '<div class="three-grid two-col-grid">',
+      threeNumberField("directional", "Intensity", settings.directional, undefined, undefined, "0.05"),
       '<div></div>',
+      '</div>',
+      '<div class="three-grid two-col-grid">',
+      threeSliderField("lightSoftness", "Softness", settings.lightSoftness, "0", "100", "1"),
+      (settings.lightType === "spot"
+        ? threeSliderField("lightConeAngle", "Cone Angle", settings.lightConeAngle, "5", "90", "1")
+        : '<div></div>'),
       '</div>',
       '<div class="three-block-subhead">Light Direction</div>',
       '<div class="three-grid two-col-grid">',
-      threeNumberField("lightX", "X", settings.lightX, "-8", "8", "0.1"),
-      threeNumberField("lightY", "Y", settings.lightY, "-8", "8", "0.1"),
-      threeNumberField("lightZ", "Z", settings.lightZ, "-8", "8", "0.1"),
+      threeNumberField("lightX", "X", settings.lightX, undefined, undefined, "0.1"),
+      threeNumberField("lightY", "Y", settings.lightY, undefined, undefined, "0.1"),
+      threeNumberField("lightZ", "Z", settings.lightZ, undefined, undefined, "0.1"),
       '<div></div>',
       '</div>',
       '</div>'
@@ -302,7 +336,10 @@ function threeSectionContent(settings, source, relinkDisabled) {
       threeSliderField("bloomThreshold", "Threshold", settings.bloomThreshold, "0", "1", "0.05"),
       threeSliderField("flareOpacity", "Flare Opacity", settings.flareOpacity, "0", "100", "1"),
       '</div>',
-      '<div class="three-action-stack three-action-stack-spaced"><button class="command-btn three-inline-btn" id="three-d-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original Layer</button></div>',
+      '<div class="three-action-stack three-action-stack-spaced">',
+      '<button class="command-btn three-inline-btn" id="three-d-download-obj"' + (source ? "" : " disabled") + '>Download OBJ</button>',
+      '<button class="command-btn three-inline-btn" id="three-d-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original Layer</button>',
+      '</div>',
       '</div>'
     ].join("");
   }
@@ -465,6 +502,15 @@ function bindThreeDPanel() {
     };
   });
 
+  contentEl.querySelectorAll("[data-three-light-type]").forEach(function (button) {
+    button.onclick = function () {
+      if (threeDState.settings.lightType === button.dataset.threeLightType) return;
+      threeDState.settings.lightType = button.dataset.threeLightType;
+      render();
+      scheduleThreeDPreview();
+    };
+  });
+
   contentEl.querySelectorAll("[data-three-field]").forEach(function (input) {
     input.oninput = function () {
       if (input.type === "range") {
@@ -540,6 +586,13 @@ function bindThreeDPanel() {
     };
   }
 
+  const objButton = document.getElementById("three-d-download-obj");
+  if (objButton) {
+    objButton.onclick = function () {
+      exportThreeDObjectAsObj();
+    };
+  }
+
   const fitButton = document.getElementById("three-d-fit-frame");
   if (fitButton) {
     fitButton.onclick = function () {
@@ -601,6 +654,7 @@ function updateThreeDSetting(input) {
     threeDState.settings[key] = input.value === "" ? 0 : Number(input.value);
     if (key === "rotationX" || key === "rotationY" || key === "rotationZ") {
       setThreeDRotationPresetCustom();
+      updateThreeDQuaternionFromEuler();
     }
     return false;
   }
@@ -638,6 +692,7 @@ function resetThreeDOrbit() {
   settings.rotationX = 32;
   settings.rotationY = -28;
   settings.rotationZ = 0;
+  updateThreeDQuaternionFromEuler();
   syncThreeDFieldInputs(["rotationPreset", "rotationX", "rotationY", "rotationZ"]);
   scheduleThreeDPreview();
 }
@@ -674,6 +729,7 @@ function applyThreeDRotationPreset(preset) {
   settings.rotationX = next.x;
   settings.rotationY = next.y;
   settings.rotationZ = next.z;
+  updateThreeDQuaternionFromEuler();
   syncThreeDFieldInputs(["rotationPreset", "rotationX", "rotationY", "rotationZ"]);
   scheduleThreeDPreview();
 }
@@ -683,6 +739,173 @@ function normalizeThreeDAngle(value) {
   while (next > 180) next -= 360;
   while (next < -180) next += 360;
   return next;
+}
+
+function createThreeDQuaternion(x, y, z, w) {
+  return {
+    x: Number(x) || 0,
+    y: Number(y) || 0,
+    z: Number(z) || 0,
+    w: Number(w) || 1
+  };
+}
+
+function normalizeThreeDQuaternion(quaternion) {
+  const q = quaternion || createThreeDQuaternion(0, 0, 0, 1);
+  const length = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w) || 1;
+  return createThreeDQuaternion(q.x / length, q.y / length, q.z / length, q.w / length);
+}
+
+function ensureThreeDRotationQuaternion() {
+  const settings = threeDState.settings;
+  const q = settings.rotationQuaternion;
+  if (q && Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.z) && Number.isFinite(q.w)) {
+    settings.rotationQuaternion = normalizeThreeDQuaternion(q);
+    return settings.rotationQuaternion;
+  }
+  updateThreeDQuaternionFromEuler();
+  return settings.rotationQuaternion;
+}
+
+function updateThreeDQuaternionFromEuler() {
+  const settings = threeDState.settings;
+  const x = degToRad(settings.rotationX || 0) * 0.5;
+  const y = degToRad(settings.rotationY || 0) * 0.5;
+  const z = degToRad(settings.rotationZ || 0) * 0.5;
+  const sx = Math.sin(x);
+  const cx = Math.cos(x);
+  const sy = Math.sin(y);
+  const cy = Math.cos(y);
+  const sz = Math.sin(z);
+  const cz = Math.cos(z);
+  settings.rotationQuaternion = normalizeThreeDQuaternion({
+    x: sx * cy * cz + cx * sy * sz,
+    y: cx * sy * cz - sx * cy * sz,
+    z: cx * cy * sz + sx * sy * cz,
+    w: cx * cy * cz - sx * sy * sz
+  });
+}
+
+function updateThreeDEulerFromQuaternion(quaternion) {
+  const q = normalizeThreeDQuaternion(quaternion);
+  const sinrCosp = 2 * (q.w * q.x + q.y * q.z);
+  const cosrCosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+  const rotX = Math.atan2(sinrCosp, cosrCosp);
+  const sinp = 2 * (q.w * q.y - q.z * q.x);
+  const rotY = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
+  const sinyCosp = 2 * (q.w * q.z + q.x * q.y);
+  const cosyCosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+  const rotZ = Math.atan2(sinyCosp, cosyCosp);
+  threeDState.settings.rotationX = normalizeThreeDAngle(radToDeg(rotX));
+  threeDState.settings.rotationY = normalizeThreeDAngle(radToDeg(rotY));
+  threeDState.settings.rotationZ = normalizeThreeDAngle(radToDeg(rotZ));
+}
+
+function degToRad(value) {
+  return (Number(value) || 0) * Math.PI / 180;
+}
+
+function radToDeg(value) {
+  return (Number(value) || 0) * 180 / Math.PI;
+}
+
+function multiplyThreeDQuaternions(a, b) {
+  return normalizeThreeDQuaternion({
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+  });
+}
+
+function screenToArcballVector(clientX, clientY, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const center = getThreeDArcballCenter(rect, canvas);
+  const radius = Math.max(24, Math.min(rect.width, rect.height) * 0.42);
+  const x = (clientX - center.x) / radius;
+  const y = -(clientY - center.y) / radius;
+  const d = x * x + y * y;
+  if (d <= 1) {
+    const z = Math.sqrt(1 - d);
+    return normalizeThreeDVector({ x: x, y: y, z: z });
+  }
+  const scale = 1 / Math.sqrt(d);
+  return normalizeThreeDVector({ x: x * scale, y: y * scale, z: 0 });
+}
+
+function getThreeDArcballCenter(rect, canvas) {
+  const runtime = threeDPreviewRuntime;
+  if (runtime.camera && runtime.root && runtime.orbitTargetX !== undefined) {
+    const lib = threeDLib();
+    if (lib && lib.THREE) {
+      const T = lib.THREE;
+      const projected = new T.Vector3(runtime.orbitTargetX, runtime.orbitTargetY, runtime.orbitTargetZ);
+      projected.project(runtime.camera);
+      return {
+        x: rect.left + ((projected.x + 1) * 0.5) * rect.width,
+        y: rect.top + ((1 - projected.y) * 0.5) * rect.height
+      };
+    }
+  }
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2
+  };
+}
+
+function normalizeThreeDVector(vector) {
+  const x = Number(vector.x) || 0;
+  const y = Number(vector.y) || 0;
+  const z = Number(vector.z) || 0;
+  const length = Math.sqrt(x * x + y * y + z * z) || 1;
+  return { x: x / length, y: y / length, z: z / length };
+}
+
+function dotThreeDVector(a, b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+function crossThreeDVector(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x
+  };
+}
+
+function quatFromTwoThreeDVectors(v1, v2) {
+  const start = normalizeThreeDVector(v1);
+  const end = normalizeThreeDVector(v2);
+  const dot = clampThreeDValue(dotThreeDVector(start, end), -1, 1);
+  if (dot > 0.999999) {
+    return createThreeDQuaternion(0, 0, 0, 1);
+  }
+  if (dot < -0.999999) {
+    const axis = Math.abs(start.x) < 0.9 ? normalizeThreeDVector({ x: 1, y: 0, z: 0 }) : normalizeThreeDVector({ x: 0, y: 1, z: 0 });
+    const ortho = normalizeThreeDVector(crossThreeDVector(start, axis));
+    return normalizeThreeDQuaternion({ x: ortho.x, y: ortho.y, z: ortho.z, w: 0 });
+  }
+  const cross = crossThreeDVector(start, end);
+  const s = Math.sqrt((1 + dot) * 2);
+  const inv = 1 / s;
+  return normalizeThreeDQuaternion({
+    x: cross.x * inv,
+    y: cross.y * inv,
+    z: cross.z * inv,
+    w: s * 0.5
+  });
+}
+
+function quatFromAxisAngle(axis, angle) {
+  const n = normalizeThreeDVector(axis);
+  const half = angle * 0.5;
+  const s = Math.sin(half);
+  return normalizeThreeDQuaternion({
+    x: n.x * s,
+    y: n.y * s,
+    z: n.z * s,
+    w: Math.cos(half)
+  });
 }
 
 function ensureThreeDPreview() {
@@ -696,6 +919,9 @@ function ensureThreeDPreview() {
   const overlay = modalState.kind === "three-d-preview"
     ? document.getElementById("three-d-preview-overlay")
     : document.getElementById("three-d-overlay");
+  const gizmos = modalState.kind === "three-d-preview"
+    ? document.getElementById("three-d-preview-light-gizmos")
+    : document.getElementById("three-d-light-gizmos");
   if (!canvas || !overlay) return;
 
   const lib = threeDLib();
@@ -706,12 +932,13 @@ function ensureThreeDPreview() {
 
   if (!threeDState.source || !threeDState.source.svg) {
     overlay.textContent = threeDState.error || "Select one object, then refresh the 3D source.";
+    if (gizmos) gizmos.innerHTML = "";
     disposeThreeDPreview();
     return;
   }
 
   overlay.textContent = "";
-  renderThreeDPreview(canvas, previewImage, overlay, lib);
+  renderThreeDPreview(canvas, previewImage, overlay, gizmos, lib);
 }
 
 function scheduleThreeDPreview() {
@@ -723,7 +950,7 @@ function scheduleThreeDPreview() {
   });
 }
 
-function renderThreeDPreview(canvas, previewImage, overlay, lib) {
+function renderThreeDPreview(canvas, previewImage, overlay, gizmos, lib) {
   const T = lib.THREE;
   const fastMode = threeDPreviewRuntime.interactionMode === true;
   if (!T) {
@@ -762,6 +989,7 @@ function renderThreeDPreview(canvas, previewImage, overlay, lib) {
   const object3d = buildThreeDObject(lib, threeDState.source, threeDState.settings, threeDState.mode);
   if (!object3d) {
     overlay.textContent = "This selection could not be converted into a 3D shape yet.";
+    if (gizmos) gizmos.innerHTML = "";
     renderThreeDWithEffects(lib, threeDPreviewRuntime.renderer, threeDPreviewRuntime.scene, threeDPreviewRuntime.camera, width, height, threeDState.settings);
     return;
   }
@@ -774,6 +1002,7 @@ function renderThreeDPreview(canvas, previewImage, overlay, lib) {
     threeDPreviewRuntime.scene.add(contactShadow);
   }
   updateThreeDCameraOrbit(T, threeDPreviewRuntime.camera, threeDState.settings, object3d);
+  renderThreeDLightGizmos(canvas, gizmos, T, threeDPreviewRuntime.camera, threeDState.settings);
   if (fastMode) {
     if (previewImage) {
       previewImage.removeAttribute("src");
@@ -886,20 +1115,27 @@ function bindThreeDCanvasOrbit(canvas) {
     threeDPreviewRuntime.startRotationX = threeDState.settings.rotationX;
     threeDPreviewRuntime.startRotationY = threeDState.settings.rotationY;
     threeDPreviewRuntime.startRotationZ = threeDState.settings.rotationZ;
+    threeDPreviewRuntime.startQuaternion = ensureThreeDRotationQuaternion();
+    threeDPreviewRuntime.dragStartVector = threeDPreviewRuntime.dragMode === "orbit"
+      ? screenToArcballVector(event.clientX, event.clientY, canvas)
+      : null;
     canvas.style.cursor = "grabbing";
   };
 
   canvas.onmousemove = function (event) {
-    if (!threeDPreviewRuntime.dragging) return;
+    if (!threeDPreviewRuntime.dragging || threeDPreviewRuntime.lightDragging) return;
     const dx = event.clientX - threeDPreviewRuntime.dragStartX;
-    const dy = event.clientY - threeDPreviewRuntime.dragStartY;
     if (threeDPreviewRuntime.dragMode === "roll") {
-      threeDState.settings.rotationZ = normalizeThreeDAngle(threeDPreviewRuntime.startRotationZ + dx * 0.45);
-      syncThreeDFieldInputs(["rotationZ"]);
+      const rollQuat = quatFromAxisAngle({ x: 0, y: 0, z: 1 }, degToRad(dx * 0.45));
+      threeDState.settings.rotationQuaternion = multiplyThreeDQuaternions(rollQuat, threeDPreviewRuntime.startQuaternion || ensureThreeDRotationQuaternion());
+      updateThreeDEulerFromQuaternion(threeDState.settings.rotationQuaternion);
+      syncThreeDFieldInputs(["rotationX", "rotationY", "rotationZ"]);
     } else {
-      threeDState.settings.rotationY = normalizeThreeDAngle(threeDPreviewRuntime.startRotationY + dx * 0.45);
-      threeDState.settings.rotationX = normalizeThreeDAngle(threeDPreviewRuntime.startRotationX + dy * 0.45);
-      syncThreeDFieldInputs(["rotationX", "rotationY"]);
+      const nextVector = screenToArcballVector(event.clientX, event.clientY, canvas);
+      const deltaQuat = quatFromTwoThreeDVectors(threeDPreviewRuntime.dragStartVector || nextVector, nextVector);
+      threeDState.settings.rotationQuaternion = multiplyThreeDQuaternions(deltaQuat, threeDPreviewRuntime.startQuaternion || ensureThreeDRotationQuaternion());
+      updateThreeDEulerFromQuaternion(threeDState.settings.rotationQuaternion);
+      syncThreeDFieldInputs(["rotationX", "rotationY", "rotationZ"]);
     }
     setThreeDRotationPresetCustom();
     scheduleThreeDPreview();
@@ -928,6 +1164,233 @@ function stopThreeDCanvasOrbit(canvas) {
   if (!threeDPreviewRuntime.dragging) return;
   threeDPreviewRuntime.dragging = false;
   canvas.style.cursor = "";
+  endThreeDInteraction();
+}
+
+function renderThreeDLightGizmos(canvas, gizmos, T, camera, settings) {
+  if (!gizmos || !canvas || !T || !camera) return;
+  const width = Math.max(1, canvas.clientWidth || 300);
+  const height = Math.max(1, canvas.clientHeight || 180);
+  const targetProjection = projectThreeDPoint(T, camera, {
+    x: threeDPreviewRuntime.orbitTargetX || 0,
+    y: threeDPreviewRuntime.orbitTargetY || 0,
+    z: threeDPreviewRuntime.orbitTargetZ || 0
+  }, width, height);
+  const keyProjection = projectThreeDPoint(T, camera, {
+    x: settings.lightX,
+    y: settings.lightY,
+    z: settings.lightZ
+  }, width, height);
+  const mainVisual = threeDMainLightVisual(settings.lightType || "directional", keyProjection, targetProjection, settings.lightConeAngle || 30);
+  gizmos.innerHTML = [
+    '<div class="three-light-target" style="left:' + targetProjection.x.toFixed(2) + 'px;top:' + targetProjection.y.toFixed(2) + 'px"></div>',
+    mainVisual
+  ].join("");
+  bindThreeDLightHandle(canvas, gizmos);
+}
+
+function threeDLightLine(start, end, extraClass) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  return '<div class="three-light-line' + (extraClass ? ' ' + extraClass : '') + '" style="left:' + start.x.toFixed(2) + 'px;top:' + start.y.toFixed(2) + 'px;width:' + length.toFixed(2) + 'px;transform:rotate(' + angle.toFixed(2) + 'deg)"></div>';
+}
+
+function threeDMainLightVisual(type, source, target, coneAngle) {
+  if (type === "spot") {
+    return threeDSpotSource(source, target, coneAngle);
+  }
+  if (type === "point") {
+    return threeDPointSource(source.x, source.y);
+  }
+  return threeDDirectionalSource(source, target);
+}
+
+function threeDDirectionalSource(source, target) {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  return [
+    '<div class="three-light-source is-directional" id="three-d-light-handle" style="left:' + source.x.toFixed(2) + 'px;top:' + source.y.toFixed(2) + 'px">',
+    '<div class="three-light-core"></div>',
+    '<div class="three-light-arrow" style="transform:translate(-50%,-50%) rotate(' + angle.toFixed(2) + 'deg)"><span class="three-light-arrow-shaft"></span><span class="three-light-arrow-head"></span></div>',
+    '</div>'
+  ].join("");
+}
+
+function threeDPointSource(x, y) {
+  var rays = [];
+  for (var index = 0; index < 8; index += 1) {
+    var angle = (Math.PI * 2 * index) / 8;
+    rays.push('<div class="three-light-ray" style="transform:translate(-50%,-50%) rotate(' + (angle * 180 / Math.PI).toFixed(2) + 'deg)"></div>');
+  }
+  return [
+    '<div class="three-light-source is-point" id="three-d-light-handle" style="left:' + x.toFixed(2) + 'px;top:' + y.toFixed(2) + 'px">',
+    '<div class="three-light-halo"></div>',
+    rays.join(""),
+    '<div class="three-light-core"></div>',
+    '</div>'
+  ].join("");
+}
+
+function threeDSpotSource(source, target, angleDegrees) {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  const cone = clampThreeDValue(angleDegrees || 30, 5, 90);
+  const spread = Math.tan(degToRad(cone)) * Math.max(36, length);
+  return [
+    '<div class="three-light-source is-spot" id="three-d-light-handle" style="left:' + source.x.toFixed(2) + 'px;top:' + source.y.toFixed(2) + 'px">',
+    '<div class="three-light-cone" style="width:' + Math.max(24, length).toFixed(2) + 'px;height:' + Math.max(24, spread * 2).toFixed(2) + 'px;transform:translateY(-50%) rotate(' + angle.toFixed(2) + 'deg)"></div>',
+    '<div class="three-light-core"></div>',
+    '</div>'
+  ].join("");
+}
+
+function projectThreeDPoint(T, camera, point, width, height) {
+  const vector = new T.Vector3(point.x, point.y, point.z);
+  vector.project(camera);
+  return {
+    x: ((vector.x + 1) * 0.5) * width,
+    y: ((1 - vector.y) * 0.5) * height
+  };
+}
+
+function bindThreeDLightHandle(canvas, gizmos) {
+  const handle = gizmos ? gizmos.querySelector("#three-d-light-handle") : null;
+  if (!handle) return;
+  handle.onmousedown = function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const lib = threeDLib();
+    const T = lib && lib.THREE;
+    const camera = threeDPreviewRuntime.camera;
+    if (!T || !camera) return;
+    beginThreeDInteraction();
+    const dragPlane = createThreeDLightDragPlane(T, camera, threeDState.settings);
+    const dragPoint = projectThreeDScreenToPlane(T, camera, canvas, event.clientX, event.clientY, dragPlane);
+    if (!dragPlane || !dragPoint) return;
+    threeDPreviewRuntime.lightDragging = true;
+    threeDPreviewRuntime.lightDragMode = "screen";
+    threeDPreviewRuntime.lightStartX = threeDState.settings.lightX;
+    threeDPreviewRuntime.lightStartY = threeDState.settings.lightY;
+    threeDPreviewRuntime.lightStartZ = threeDState.settings.lightZ;
+    threeDPreviewRuntime.lightScreenStartX = event.clientX;
+    threeDPreviewRuntime.lightScreenStartY = event.clientY;
+    threeDPreviewRuntime.lightDragPlane = dragPlane;
+    threeDPreviewRuntime.lightDragPoint = dragPoint;
+    threeDPreviewRuntime.lightMoveHandler = function (moveEvent) {
+      if (!threeDPreviewRuntime.lightDragging) return;
+      const nextPoint = projectThreeDScreenToPlane(
+        T,
+        camera,
+        canvas,
+        moveEvent.clientX,
+        moveEvent.clientY,
+        threeDPreviewRuntime.lightDragPlane
+      );
+      if (!nextPoint) return;
+      threeDState.settings.lightX = clampThreeDLightValue(nextPoint.x);
+      threeDState.settings.lightY = clampThreeDLightValue(nextPoint.y);
+      threeDState.settings.lightZ = clampThreeDLightValue(nextPoint.z);
+      syncThreeDFieldInputs(["lightX", "lightY", "lightZ"]);
+      scheduleThreeDPreview();
+    };
+    threeDPreviewRuntime.lightUpHandler = function () {
+      stopThreeDLightDrag();
+    };
+    window.addEventListener("mousemove", threeDPreviewRuntime.lightMoveHandler);
+    window.addEventListener("mouseup", threeDPreviewRuntime.lightUpHandler);
+  };
+  handle.onwheel = function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    beginThreeDInteraction();
+    const target = getThreeDLightOrbitTarget();
+    const orbit = getThreeDLightOrbitState(threeDState.settings, target);
+    const delta = event.deltaY > 0 ? 10 : -10;
+    const nextRadius = clampThreeDValue(orbit.radius + delta, 24, THREE_D_LIGHT_SAFE_RANGE);
+    applyThreeDLightOrbitState(target, nextRadius, orbit.azimuth, orbit.elevation);
+    syncThreeDFieldInputs(["lightX", "lightY", "lightZ"]);
+    scheduleThreeDPreview();
+    endThreeDInteraction();
+  };
+}
+
+function createThreeDLightDragPlane(T, camera, settings) {
+  if (!T || !camera || !settings) return null;
+  const normal = new T.Vector3();
+  camera.getWorldDirection(normal);
+  if (normal.lengthSq() < 0.000001) return null;
+  normal.normalize();
+  const point = new T.Vector3(
+    Number(settings.lightX) || 0,
+    Number(settings.lightY) || 0,
+    Number(settings.lightZ) || 0
+  );
+  return new T.Plane().setFromNormalAndCoplanarPoint(normal, point);
+}
+
+function projectThreeDScreenToPlane(T, camera, canvas, clientX, clientY, plane) {
+  if (!T || !camera || !canvas || !plane) return null;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const ndc = new T.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -(((clientY - rect.top) / rect.height) * 2 - 1)
+  );
+  const raycaster = new T.Raycaster();
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new T.Vector3();
+  const intersection = raycaster.ray.intersectPlane(plane, hit);
+  return intersection ? hit.clone() : null;
+}
+
+function getThreeDLightOrbitTarget() {
+  return {
+    x: Number(threeDPreviewRuntime.orbitTargetX) || 0,
+    y: Number(threeDPreviewRuntime.orbitTargetY) || 0,
+    z: Number(threeDPreviewRuntime.orbitTargetZ) || 0
+  };
+}
+
+function getThreeDLightOrbitState(settings, target) {
+  const dx = (Number(settings.lightX) || 0) - (target.x || 0);
+  const dy = (Number(settings.lightY) || 0) - (target.y || 0);
+  const dz = (Number(settings.lightZ) || 0) - (target.z || 0);
+  const radius = Math.max(24, Math.sqrt(dx * dx + dy * dy + dz * dz) || 24);
+  const azimuth = Math.atan2(dx, dz);
+  const elevation = Math.asin(clampThreeDValue(dy / radius, -1, 1));
+  return {
+    radius: radius,
+    azimuth: azimuth,
+    elevation: elevation
+  };
+}
+
+function applyThreeDLightOrbitState(target, radius, azimuth, elevation) {
+  const safeRadius = clampThreeDValue(radius, 24, THREE_D_LIGHT_SAFE_RANGE);
+  const cosElevation = Math.cos(elevation);
+  threeDState.settings.lightX = clampThreeDLightValue((target.x || 0) + Math.sin(azimuth) * cosElevation * safeRadius);
+  threeDState.settings.lightY = clampThreeDLightValue((target.y || 0) + Math.sin(elevation) * safeRadius);
+  threeDState.settings.lightZ = clampThreeDLightValue((target.z || 0) + Math.cos(azimuth) * cosElevation * safeRadius);
+}
+
+function stopThreeDLightDrag() {
+  if (!threeDPreviewRuntime.lightDragging) return;
+  threeDPreviewRuntime.lightDragging = false;
+  if (threeDPreviewRuntime.lightMoveHandler) {
+    window.removeEventListener("mousemove", threeDPreviewRuntime.lightMoveHandler);
+  }
+  if (threeDPreviewRuntime.lightUpHandler) {
+    window.removeEventListener("mouseup", threeDPreviewRuntime.lightUpHandler);
+  }
+  threeDPreviewRuntime.lightMoveHandler = null;
+  threeDPreviewRuntime.lightUpHandler = null;
+  threeDPreviewRuntime.lightDragPlane = null;
+  threeDPreviewRuntime.lightDragPoint = null;
   endThreeDInteraction();
 }
 
@@ -992,6 +1455,7 @@ function disposeThreeDPreview() {
   threeDPreviewRuntime.dragging = false;
   threeDPreviewRuntime.dragMode = "orbit";
   threeDPreviewRuntime.interactionMode = false;
+  stopThreeDLightDrag();
   if (threeDPreviewRuntime.interactionTimer) {
     window.clearTimeout(threeDPreviewRuntime.interactionTimer);
     threeDPreviewRuntime.interactionTimer = 0;
@@ -1022,9 +1486,8 @@ function buildThreeDObject(lib, source, settings, mode) {
   fitThreeDObject(root, T, settings);
   const pivot = new T.Group();
   pivot.add(root);
-  pivot.rotation.x = T.MathUtils.degToRad(settings.rotationX || 0);
-  pivot.rotation.y = T.MathUtils.degToRad(settings.rotationY || 0);
-  pivot.rotation.z = T.MathUtils.degToRad(settings.rotationZ);
+  const q = ensureThreeDRotationQuaternion();
+  pivot.quaternion.set(q.x, q.y, q.z, q.w);
   return pivot;
 }
 
@@ -1260,6 +1723,45 @@ function exportThreeDRender() {
     exportHeight: exportPlan.height,
     exportScaleApplied: exportPlan.effectiveScale
   });
+}
+
+function exportThreeDObjectAsObj() {
+  if (!threeDState.source || !threeDState.source.svg) return;
+  const lib = threeDLib();
+  if (!lib || !lib.THREE || !lib.OBJExporter) {
+    statusEl.textContent = "OBJ export is not ready yet.";
+    return;
+  }
+  const object3d = buildThreeDObject(lib, threeDState.source, threeDState.settings, threeDState.mode);
+  if (!object3d) {
+    statusEl.textContent = "This selection could not be converted into an OBJ mesh.";
+    return;
+  }
+  try {
+    const exporter = new lib.OBJExporter();
+    const objText = exporter.parse(object3d);
+    const blob = new Blob([objText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = safeThreeDFileName((threeDState.source.name || "3d-object") + ".obj");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+    statusEl.textContent = "OBJ exported from current 3D mesh.";
+  } finally {
+    disposeThreeDNode(object3d, lib.THREE);
+  }
+}
+
+function safeThreeDFileName(name) {
+  return String(name || "3d-object.obj")
+    .replace(/[<>:\"\/\\|?*\x00-\x1F]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim() || "3d-object.obj";
 }
 
 function createThreeDExportPlan(scale, source) {
@@ -1758,28 +2260,61 @@ function applyThreeDLightingPreset(preset) {
 
 function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
   const lighting = createLightingPresetConfig(settings.lightingPreset);
+  const target = new T.Object3D();
+  target.position.set(0, 0, 0);
+  scene.add(target);
   const ambient = new T.AmbientLight(0xffffff, Math.max(0, settings.ambient) * lighting.ambientScale);
   scene.add(ambient);
 
   const hemi = new T.HemisphereLight(lighting.sky, lighting.ground, lighting.hemiIntensity);
   scene.add(hemi);
-
-  const key = new T.DirectionalLight(lighting.keyColor, Math.max(0, settings.directional) * lighting.keyScale);
-  key.position.set(settings.lightX, settings.lightY, settings.lightZ);
-  scene.add(key);
+  const keyIntensity = Math.max(0, settings.directional) * lighting.keyScale;
+  const lightType = settings.lightType || "directional";
+  const softness = clampThreeDValue(settings.lightSoftness || 0, 0, 100) / 100;
+  let key = null;
+  if (lightType === "point") {
+    key = new T.PointLight(lighting.keyColor, keyIntensity, 0, Math.max(1.2, 1 + softness * 2.6));
+    key.position.set(settings.lightX, settings.lightY, settings.lightZ);
+    scene.add(key);
+  } else if (lightType === "spot") {
+    key = new T.SpotLight(
+      lighting.keyColor,
+      keyIntensity,
+      0,
+      degToRad(clampThreeDValue(settings.lightConeAngle || 30, 5, 90)),
+      clampThreeDValue(0.08 + softness * 0.82, 0, 1),
+      1
+    );
+    key.position.set(settings.lightX, settings.lightY, settings.lightZ);
+    key.target = target;
+    scene.add(key);
+    scene.add(key.target);
+  } else {
+    key = new T.DirectionalLight(lighting.keyColor, keyIntensity);
+    key.position.set(settings.lightX, settings.lightY, settings.lightZ);
+    key.target = target;
+    scene.add(key);
+    scene.add(key.target);
+  }
 
   const fill = new T.DirectionalLight(lighting.fillColor, Math.max(0, settings.directional) * lighting.fillScale);
   fill.position.set(-settings.lightX * 0.9, Math.max(0.6, settings.lightY * 0.55), settings.lightZ * 0.6);
+  fill.target = target;
   scene.add(fill);
+  scene.add(fill.target);
 
   const rim = new T.DirectionalLight(lighting.rimColor, Math.max(0, settings.directional) * lighting.rimScale);
   rim.position.set(settings.lightX * -0.35, -settings.lightY * 0.4, -Math.max(1, settings.lightZ));
+  rim.target = target;
   scene.add(rim);
+  scene.add(rim.target);
 
   if (lighting.spotScale) {
-    const spot = new T.SpotLight(lighting.spotColor || 0xffffff, Math.max(0, settings.directional) * lighting.spotScale, 0, 0.72, 0.28, 1);
+    const spot = new T.SpotLight(lighting.spotColor || 0xffffff, Math.max(0, settings.directional) * lighting.spotScale, 0, 0.72, 0.18 + softness * 0.42, 1);
     spot.position.set(settings.lightX * 0.45, Math.max(1.2, settings.lightY * 1.2), Math.max(2, settings.lightZ * 1.25));
+    spot.target = target;
     scene.add(spot);
+    scene.add(spot.target);
   }
 
   if (lighting.pointScale) {
@@ -2001,6 +2536,10 @@ function clampThreeDValue(value, min, max) {
   return Math.min(max, Math.max(min, number));
 }
 
+function clampThreeDLightValue(value) {
+  return clampThreeDValue(value, -THREE_D_LIGHT_SAFE_RANGE, THREE_D_LIGHT_SAFE_RANGE);
+}
+
 function displayThreeDMode(mode) {
   if (mode === "revolve") return "Revolve";
   if (mode === "inflate") return "Inflate";
@@ -2014,12 +2553,12 @@ function threeDPreviewModalHtml() {
   const stageStyle = threeDStageStyle(source, true);
   return [
     '<div class="three-d-modal-layout">',
-    '<div class="three-d-preview-stage three-d-preview-stage-modal" style="' + stageStyle + '"><canvas id="three-d-preview-canvas"></canvas><img id="three-d-preview-modal-image" class="three-d-preview-image" alt=""><div id="three-d-preview-overlay" class="three-d-overlay"></div></div>',
+    '<div class="three-d-preview-stage three-d-preview-stage-modal" style="' + stageStyle + '"><canvas id="three-d-preview-canvas"></canvas><img id="three-d-preview-modal-image" class="three-d-preview-image" alt=""><div id="three-d-preview-light-gizmos" class="three-d-light-gizmos"></div><div id="three-d-preview-overlay" class="three-d-overlay"></div></div>',
     '<div class="three-d-preview-actions two-actions">',
     '<button class="command-btn" id="three-d-modal-export"' + (source ? "" : " disabled") + '>' + actionLabel + '</button>',
     '<button class="command-btn" id="three-d-modal-relink"' + (relinkDisabled ? " disabled" : "") + '>Relink Original</button>',
     '</div>',
-    '<div class="three-d-help muted">Drag rotates X/Y. Shift + drag rotates Z. Mouse wheel zooms.</div>',
+    '<div class="three-d-help muted">Drag rotates freely. Shift + drag rolls Z. Drag the light source directly in the preview. Wheel over the source adjusts distance.</div>',
     '</div>'
   ].join("");
 }
