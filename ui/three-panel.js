@@ -5,6 +5,9 @@ const threeDPreviewRuntime = {
   camera: null,
   root: null,
   envTarget: null,
+  envKey: "",
+  sourceSvg: "",
+  sourceData: null,
   orbitTargetX: 0,
   orbitTargetY: 0,
   orbitTargetZ: 0,
@@ -36,6 +39,11 @@ const threeDPreviewRuntime = {
 const THREE_D_EXPORT_MAX_DIMENSION = 3072;
 const THREE_D_EXPORT_MAX_PIXELS = 6291456;
 const THREE_D_LIGHT_SAFE_RANGE = 240;
+const THREE_D_PREVIEW_PIXEL_RATIO_LIMIT = 1.25;
+const THREE_D_PREVIEW_FAST_PIXEL_RATIO = 0.75;
+const THREE_D_SHADOW_MAP_SIZE = 1024;
+const THREE_D_ENVIRONMENT_WIDTH = 256;
+const THREE_D_ENVIRONMENT_HEIGHT = 128;
 
 window.addEventListener("appearance-3d-ready", function () {
   if (activeTab === "three-d") {
@@ -140,13 +148,8 @@ function threeDStageStyle(source, large) {
 
 function configureThreeDRenderer(T, renderer, useDevicePixelRatio, settings) {
   if (!renderer) return;
-  renderer.setPixelRatio(useDevicePixelRatio ? Math.min(window.devicePixelRatio || 1, 1.25) : 1);
-  if (renderer.shadowMap) {
-    renderer.shadowMap.enabled = true;
-    if (T && T.PCFSoftShadowMap !== undefined) {
-      renderer.shadowMap.type = T.PCFSoftShadowMap;
-    }
-  }
+  renderer.setPixelRatio(resolveThreeDRendererPixelRatio(useDevicePixelRatio));
+  configureThreeDShadowMap(T, renderer, true);
   if ("outputColorSpace" in renderer && T.SRGBColorSpace) {
     renderer.outputColorSpace = T.SRGBColorSpace;
   }
@@ -160,10 +163,22 @@ function configureThreeDRenderer(T, renderer, useDevicePixelRatio, settings) {
 
 function configureThreeDPreviewRenderer(T, renderer, settings, fastMode) {
   if (!renderer) return;
+  configureThreeDRenderer(T, renderer, true, settings);
   if (fastMode) {
-    renderer.setPixelRatio(0.75);
-  } else {
-    configureThreeDRenderer(T, renderer, true, settings);
+    renderer.setPixelRatio(THREE_D_PREVIEW_FAST_PIXEL_RATIO);
+    configureThreeDShadowMap(T, renderer, false);
+  }
+}
+
+function resolveThreeDRendererPixelRatio(useDevicePixelRatio) {
+  return useDevicePixelRatio ? Math.min(window.devicePixelRatio || 1, THREE_D_PREVIEW_PIXEL_RATIO_LIMIT) : 1;
+}
+
+function configureThreeDShadowMap(T, renderer, enabled) {
+  if (!renderer || !renderer.shadowMap) return;
+  renderer.shadowMap.enabled = enabled === true;
+  if (enabled === true && T && T.PCFSoftShadowMap !== undefined) {
+    renderer.shadowMap.type = T.PCFSoftShadowMap;
   }
 }
 
@@ -1077,7 +1092,7 @@ function renderThreeDProcessedPreview(previewImage, sourceCanvas, settings) {
 
 function renderThreeDWithEffects(lib, renderer, scene, camera, width, height, settings) {
   if (!lib || !renderer || !scene || !camera) return;
-  if (!settings.bloomEnabled || !lib.EffectComposer || !lib.RenderPass || !lib.UnrealBloomPass) {
+  if (!shouldRenderThreeDBloom(lib, settings)) {
     renderer.render(scene, camera);
     return;
   }
@@ -1102,21 +1117,24 @@ function renderThreeDWithEffects(lib, renderer, scene, camera, width, height, se
   }
 }
 
+function shouldRenderThreeDBloom(lib, settings) {
+  return !!(
+    lib &&
+    lib.EffectComposer &&
+    lib.RenderPass &&
+    lib.UnrealBloomPass &&
+    settings &&
+    settings.bloomEnabled &&
+    Math.max(0, Number(settings.bloomStrength) || 0) > 0.001
+  );
+}
+
 function clearThreeDScene(T) {
   while (threeDPreviewRuntime.scene.children.length) {
     const child = threeDPreviewRuntime.scene.children.pop();
     disposeThreeDNode(child, T);
   }
   threeDPreviewRuntime.root = null;
-  if (threeDPreviewRuntime.envTarget) {
-    if (threeDPreviewRuntime.envTarget.texture && typeof threeDPreviewRuntime.envTarget.texture.dispose === "function") {
-      threeDPreviewRuntime.envTarget.texture.dispose();
-    }
-    if (typeof threeDPreviewRuntime.envTarget.dispose === "function") {
-      threeDPreviewRuntime.envTarget.dispose();
-    }
-    threeDPreviewRuntime.envTarget = null;
-  }
 }
 
 function bindThreeDCanvasOrbit(canvas) {
@@ -1453,11 +1471,34 @@ function disposeThreeDMaterial(material) {
   }
 }
 
+function disposeThreeDEnvironmentTarget(target) {
+  if (!target) return;
+  if (target.texture && typeof target.texture.dispose === "function") {
+    target.texture.dispose();
+  }
+  if (typeof target.dispose === "function") {
+    target.dispose();
+  }
+}
+
+function disposeCachedThreeDEnvironment() {
+  disposeThreeDEnvironmentTarget(threeDPreviewRuntime.envTarget);
+  threeDPreviewRuntime.envTarget = null;
+  threeDPreviewRuntime.envKey = "";
+}
+
+function clearThreeDSourceCache() {
+  threeDPreviewRuntime.sourceSvg = "";
+  threeDPreviewRuntime.sourceData = null;
+}
+
 function disposeThreeDPreview() {
   const T = threeDLib() ? threeDLib().THREE : null;
   if (threeDPreviewRuntime.scene && T) {
     clearThreeDScene(T);
   }
+  disposeCachedThreeDEnvironment();
+  clearThreeDSourceCache();
   if (threeDPreviewRuntime.renderer) {
     threeDPreviewRuntime.renderer.dispose();
   }
@@ -1466,7 +1507,6 @@ function disposeThreeDPreview() {
   threeDPreviewRuntime.scene = null;
   threeDPreviewRuntime.camera = null;
   threeDPreviewRuntime.root = null;
-  threeDPreviewRuntime.envTarget = null;
   threeDPreviewRuntime.dragging = false;
   threeDPreviewRuntime.dragMode = "orbit";
   threeDPreviewRuntime.interactionMode = false;
@@ -1484,8 +1524,7 @@ function threeDLib() {
 
 function buildThreeDObject(lib, source, settings, mode) {
   const T = lib.THREE;
-  const loader = new lib.SVGLoader();
-  const data = loader.parse(source.svg);
+  const data = parseThreeDSource(lib, source);
   if (!data || !data.paths || !data.paths.length) return null;
 
   let root = null;
@@ -1504,6 +1543,24 @@ function buildThreeDObject(lib, source, settings, mode) {
   const q = ensureThreeDRotationQuaternion();
   pivot.quaternion.set(q.x, q.y, q.z, q.w);
   return pivot;
+}
+
+function parseThreeDSource(lib, source) {
+  const svg = source && source.svg ? String(source.svg) : "";
+  if (!svg || !lib || !lib.SVGLoader) return null;
+  if (threeDPreviewRuntime.sourceSvg === svg && threeDPreviewRuntime.sourceData) {
+    return threeDPreviewRuntime.sourceData;
+  }
+  try {
+    const loader = new lib.SVGLoader();
+    const data = loader.parse(svg);
+    threeDPreviewRuntime.sourceSvg = svg;
+    threeDPreviewRuntime.sourceData = data;
+    return data;
+  } catch (error) {
+    clearThreeDSourceCache();
+    return null;
+  }
 }
 
 function buildExtrudeObject(lib, data, settings) {
@@ -1529,17 +1586,7 @@ function buildInflateObject(lib, data, settings) {
   data.paths.forEach(function (path) {
     const shapes = lib.SVGLoader.createShapes(path);
     shapes.forEach(function (shape) {
-      const amount = Math.max(1, settings.inflateAmount);
-      const geometry = new T.ExtrudeGeometry(shape, {
-        depth: Math.max(0.1, amount * 0.6),
-        bevelEnabled: true,
-        bevelSize: Math.max(0.1, amount * profileMultiplier(settings.bevelProfile, "size", 0.55)),
-        bevelThickness: Math.max(0.1, amount * profileMultiplier(settings.bevelProfile, "thickness", 1)),
-        bevelOffset: Math.max(-amount, Math.min(amount, settings.bevelOffset || 0)),
-        bevelSegments: Math.max(5, Math.round(settings.bevelSegments + 5 + profileMultiplier(settings.bevelProfile, "segments", 0))),
-        curveSegments: Math.max(48, Math.round(36 + settings.bevelSegments * 2.5)),
-        steps: 2
-      });
+      const geometry = new T.ExtrudeGeometry(shape, buildInflateSettings(settings));
       finalizeThreeDGeometry(geometry);
       const mesh = new T.Mesh(geometry, createThreeDMaterialSet(T, path, settings, true));
       enableThreeDMeshShadow(mesh);
@@ -1659,6 +1706,7 @@ function threeDMaterialForPath(T, path, settings, variant) {
 
 function fitThreeDObject(object3d, T, settings) {
   const box = new T.Box3().setFromObject(object3d);
+  if (!isFiniteThreeDBox(box)) return;
   const center = box.getCenter(new T.Vector3());
   object3d.position.sub(center);
   const size = box.getSize(new T.Vector3());
@@ -1673,6 +1721,19 @@ function fitThreeDObject(object3d, T, settings) {
   object3d.position.x += offsetX;
   object3d.position.y += offsetY;
   object3d.position.z += offsetZ;
+}
+
+function isFiniteThreeDBox(box) {
+  return !!(box && isFiniteThreeDVector3(box.min) && isFiniteThreeDVector3(box.max));
+}
+
+function isFiniteThreeDVector3(vector) {
+  return !!(
+    vector &&
+    Number.isFinite(vector.x) &&
+    Number.isFinite(vector.y) &&
+    Number.isFinite(vector.z)
+  );
 }
 
 function createThreeDContactShadow(T, object3d, settings) {
@@ -1806,8 +1867,9 @@ function safeThreeDFileName(name) {
 }
 
 function createThreeDExportPlan(scale, source) {
-  const sourceWidth = source && source.width ? Number(source.width) : threeDPreviewRuntime.canvas.width;
-  const sourceHeight = source && source.height ? Number(source.height) : threeDPreviewRuntime.canvas.height;
+  const fallbackCanvas = threeDPreviewRuntime.canvas || { width: 300, height: 240 };
+  const sourceWidth = source && source.width ? Number(source.width) : (fallbackCanvas.width || 300);
+  const sourceHeight = source && source.height ? Number(source.height) : (fallbackCanvas.height || 240);
   const ratio = Math.max(0.35, Math.min(3.5, sourceWidth / Math.max(1, sourceHeight)));
   const baseWidth = Math.max(256, Math.round(Math.min(2048, sourceWidth * 2)));
   const baseHeight = Math.max(1, Math.round(baseWidth / ratio));
@@ -1882,14 +1944,8 @@ function scaledThreeDExportCanvas(exportPlan, source, mode) {
     outputCanvas = applyThreeDCanvasEffects(outputCanvas, threeDState.settings);
   }
   if (exportEnvironment) {
-    if (exportEnvironment.texture && typeof exportEnvironment.texture.dispose === "function") {
-      exportEnvironment.texture.dispose();
-    }
-    if (typeof exportEnvironment.dispose === "function") {
-      exportEnvironment.dispose();
-    }
+    disposeThreeDEnvironmentTarget(exportEnvironment);
   }
-  disposeThreeDNode(object3d, T);
   while (scene.children.length) {
     const child = scene.children.pop();
     disposeThreeDNode(child, T);
@@ -2040,6 +2096,7 @@ function shouldUseThreeDCanvasEffects(settings) {
 
 function applyThreeDCanvasEffects(sourceCanvas, settings) {
   if (!sourceCanvas) return sourceCanvas;
+  if (!shouldUseThreeDCanvasEffects(settings)) return sourceCanvas;
   const canvas = document.createElement("canvas");
   canvas.width = sourceCanvas.width;
   canvas.height = sourceCanvas.height;
@@ -2048,19 +2105,22 @@ function applyThreeDCanvasEffects(sourceCanvas, settings) {
   context.drawImage(sourceCanvas, 0, 0);
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
   const data = imageData.data;
-  const original = new Uint8ClampedArray(data);
   const contrast = Number(settings.contrast) || 0;
   const grain = Math.max(0, Number(settings.grainAmount) || 0);
   const chroma = Math.max(0, Number(settings.chromaticAberration) || 0);
   const shift = Math.round(chroma);
   const contrastFactor = 1 + contrast * 1.45;
-  for (var y = 0; y < canvas.height; y += 1) {
-    for (var x = 0; x < canvas.width; x += 1) {
-      var index = (y * canvas.width + x) * 4;
-      if (original[index + 3] === 0) continue;
+  const width = canvas.width;
+  const height = canvas.height;
+  const original = shift > 0 ? new Uint8ClampedArray(data) : null;
+  for (var y = 0; y < height; y += 1) {
+    const rowOffset = y * width;
+    for (var x = 0; x < width; x += 1) {
+      var index = (rowOffset + x) * 4;
+      if ((original || data)[index + 3] === 0) continue;
       if (shift > 0) {
-        var redIndex = (y * canvas.width + clampPixel(x - shift, 0, canvas.width - 1)) * 4;
-        var blueIndex = (y * canvas.width + clampPixel(x + shift, 0, canvas.width - 1)) * 4;
+        var redIndex = (rowOffset + clampPixel(x - shift, 0, width - 1)) * 4;
+        var blueIndex = (rowOffset + clampPixel(x + shift, 0, width - 1)) * 4;
         data[index] = original[redIndex];
         data[index + 2] = original[blueIndex + 2];
       }
@@ -2091,20 +2151,40 @@ function buildExtrudeSettings(settings) {
   const sizeBase = Math.max(0, settings.bevelSize);
   const thicknessBase = Math.max(0, settings.bevelThickness);
   const bevelEnabled = sizeBase > 0 || thicknessBase > 0;
-  const bevelSegments = bevelEnabled
-    ? Math.max(4, Math.round(settings.bevelSegments + 2 + profileMultiplier(settings.bevelProfile, "segments", 0)))
-    : 0;
-  const curveSegments = Math.max(40, Math.round(28 + settings.bevelSegments * 2.5));
   return {
     depth: Math.max(0.1, settings.depth),
     bevelEnabled: bevelEnabled,
     bevelSize: Math.max(0, sizeBase * profileMultiplier(settings.bevelProfile, "size", 1)),
     bevelThickness: Math.max(0, thicknessBase * profileMultiplier(settings.bevelProfile, "thickness", 1)),
     bevelOffset: clampThreeDValue(settings.bevelOffset || 0, -80, 80) + profileMultiplier(settings.bevelProfile, "offset", 0),
-    bevelSegments: bevelSegments,
-    curveSegments: curveSegments,
+    bevelSegments: bevelEnabled ? resolveThreeDBevelSegments(settings, 2, 4) : 0,
+    curveSegments: resolveThreeDCurveSegments(settings, 28, 2.5, 40),
     steps: bevelEnabled ? 2 : 1
   };
+}
+
+function buildInflateSettings(settings) {
+  const amount = Math.max(1, Number(settings.inflateAmount) || 0);
+  return {
+    depth: Math.max(0.1, amount * 0.6),
+    bevelEnabled: true,
+    bevelSize: Math.max(0.1, amount * profileMultiplier(settings.bevelProfile, "size", 0.55)),
+    bevelThickness: Math.max(0.1, amount * profileMultiplier(settings.bevelProfile, "thickness", 1)),
+    bevelOffset: clampThreeDValue(settings.bevelOffset || 0, -amount, amount),
+    bevelSegments: resolveThreeDBevelSegments(settings, 5, 5),
+    curveSegments: resolveThreeDCurveSegments(settings, 36, 2.5, 48),
+    steps: 2
+  };
+}
+
+function resolveThreeDBevelSegments(settings, base, minimum) {
+  const bevelSegments = Math.max(0, Number(settings && settings.bevelSegments) || 0);
+  return Math.max(minimum, Math.round(bevelSegments + base + profileMultiplier(settings && settings.bevelProfile, "segments", 0)));
+}
+
+function resolveThreeDCurveSegments(settings, base, multiplier, minimum) {
+  const bevelSegments = Math.max(0, Number(settings && settings.bevelSegments) || 0);
+  return Math.max(minimum, Math.round(base + bevelSegments * multiplier));
 }
 
 function profileMultiplier(profile, key, fallback) {
@@ -2307,20 +2387,21 @@ function applyThreeDLightingPreset(preset) {
 function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
   const lighting = createLightingPresetConfig(settings.lightingPreset);
   const rigStrength = resolveThreeDLightingRigStrength(settings);
-  const hemiStrength = Math.max(0, settings.hemiStrength === undefined ? 1 : (Number(settings.hemiStrength) || 0));
-  const fillStrength = Math.max(0, settings.fillStrength === undefined ? 1 : (Number(settings.fillStrength) || 0));
-  const rimStrength = Math.max(0, settings.rimStrength === undefined ? 1 : (Number(settings.rimStrength) || 0));
-  const extraSpotStrength = Math.max(0, settings.extraSpotStrength === undefined ? 1 : (Number(settings.extraSpotStrength) || 0));
-  const extraPointStrength = Math.max(0, settings.extraPointStrength === undefined ? 1 : (Number(settings.extraPointStrength) || 0));
+  const directionalStrength = Math.max(0, Number(settings.directional) || 0);
+  const hemiStrength = resolveThreeDLightStrength(settings, "hemiStrength", 1);
+  const fillStrength = resolveThreeDLightStrength(settings, "fillStrength", 1);
+  const rimStrength = resolveThreeDLightStrength(settings, "rimStrength", 1);
+  const extraSpotStrength = resolveThreeDLightStrength(settings, "extraSpotStrength", 1);
+  const extraPointStrength = resolveThreeDLightStrength(settings, "extraPointStrength", 1);
   const target = new T.Object3D();
   target.position.set(0, 0, 0);
   scene.add(target);
-  const ambient = new T.AmbientLight(0xffffff, Math.max(0, settings.ambient) * lighting.ambientScale * rigStrength);
+  const ambient = new T.AmbientLight(0xffffff, Math.max(0, Number(settings.ambient) || 0) * lighting.ambientScale * rigStrength);
   scene.add(ambient);
 
   const hemi = new T.HemisphereLight(lighting.sky, lighting.ground, lighting.hemiIntensity * rigStrength * hemiStrength);
   scene.add(hemi);
-  const keyIntensity = Math.max(0, settings.directional) * lighting.keyScale;
+  const keyIntensity = directionalStrength * lighting.keyScale;
   const lightType = settings.lightType || "directional";
   const softness = clampThreeDValue(settings.lightSoftness || 0, 0, 100) / 100;
   let key = null;
@@ -2352,20 +2433,20 @@ function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
     scene.add(key.target);
   }
 
-  const fill = new T.DirectionalLight(lighting.fillColor, Math.max(0, settings.directional) * lighting.fillScale * fillStrength);
+  const fill = new T.DirectionalLight(lighting.fillColor, directionalStrength * lighting.fillScale * fillStrength);
   fill.position.set(-settings.lightX * 0.9, Math.max(0.6, settings.lightY * 0.55), settings.lightZ * 0.6);
   fill.target = target;
   scene.add(fill);
   scene.add(fill.target);
 
-  const rim = new T.DirectionalLight(lighting.rimColor, Math.max(0, settings.directional) * lighting.rimScale * rimStrength);
+  const rim = new T.DirectionalLight(lighting.rimColor, directionalStrength * lighting.rimScale * rimStrength);
   rim.position.set(settings.lightX * -0.35, -settings.lightY * 0.4, -Math.max(1, settings.lightZ));
   rim.target = target;
   scene.add(rim);
   scene.add(rim.target);
 
   if (lighting.spotScale && extraSpotStrength > 0) {
-    const spot = new T.SpotLight(lighting.spotColor || 0xffffff, Math.max(0, settings.directional) * lighting.spotScale * extraSpotStrength, 0, 0.72, 0.18 + softness * 0.42, 1);
+    const spot = new T.SpotLight(lighting.spotColor || 0xffffff, directionalStrength * lighting.spotScale * extraSpotStrength, 0, 0.72, 0.18 + softness * 0.42, 1);
     spot.position.set(settings.lightX * 0.45, Math.max(1.2, settings.lightY * 1.2), Math.max(2, settings.lightZ * 1.25));
     spot.target = target;
     scene.add(spot);
@@ -2373,19 +2454,40 @@ function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
   }
 
   if (lighting.pointScale && extraPointStrength > 0) {
-    const point = new T.PointLight(lighting.pointColor || 0xffffff, Math.max(0, settings.directional) * lighting.pointScale * extraPointStrength, 0, 2);
+    const point = new T.PointLight(lighting.pointColor || 0xffffff, directionalStrength * lighting.pointScale * extraPointStrength, 0, 2);
     point.position.set(-settings.lightX * 0.85, Math.max(0.6, settings.lightY * 0.75), Math.max(1.2, settings.lightZ * 0.45));
     scene.add(point);
   }
 
-  const environment = createFakeEnvironmentMap(T, renderer, settings);
+  const environment = resolveThreeDEnvironment(T, renderer, settings, trackEnvironment);
   if (environment && environment.texture) {
     scene.environment = environment.texture;
-    if (trackEnvironment) {
-      threeDPreviewRuntime.envTarget = environment;
-    }
   }
   return environment;
+}
+
+function resolveThreeDEnvironment(T, renderer, settings, usePreviewCache) {
+  if (!shouldEnableThreeDEnvironment(settings) || !renderer) {
+    if (usePreviewCache) {
+      disposeCachedThreeDEnvironment();
+    }
+    return null;
+  }
+  if (!usePreviewCache) {
+    return createFakeEnvironmentMap(T, renderer, settings);
+  }
+  const key = createThreeDEnvironmentKey(settings);
+  if (threeDPreviewRuntime.envTarget && threeDPreviewRuntime.envKey === key) {
+    return threeDPreviewRuntime.envTarget;
+  }
+  disposeCachedThreeDEnvironment();
+  threeDPreviewRuntime.envTarget = createFakeEnvironmentMap(T, renderer, settings);
+  threeDPreviewRuntime.envKey = threeDPreviewRuntime.envTarget ? key : "";
+  return threeDPreviewRuntime.envTarget;
+}
+
+function createThreeDEnvironmentKey(settings) {
+  return String((settings && settings.environmentPreset) || "studio_soft");
 }
 
 function configureThreeDKeyShadow(T, light, settings, lightType) {
@@ -2393,8 +2495,8 @@ function configureThreeDKeyShadow(T, light, settings, lightType) {
   light.castShadow = true;
   if (light.shadow) {
     if (light.shadow.mapSize) {
-      light.shadow.mapSize.width = 1024;
-      light.shadow.mapSize.height = 1024;
+      light.shadow.mapSize.width = THREE_D_SHADOW_MAP_SIZE;
+      light.shadow.mapSize.height = THREE_D_SHADOW_MAP_SIZE;
     }
     light.shadow.bias = -0.00015;
     if (typeof light.shadow.normalBias !== "undefined") {
@@ -2524,6 +2626,11 @@ function resolveThreeDLightingRigStrength(settings) {
   return Math.max(0, current / reference);
 }
 
+function resolveThreeDLightStrength(settings, key, fallback) {
+  if (!settings || settings[key] === undefined) return Math.max(0, fallback);
+  return Math.max(0, Number(settings[key]) || 0);
+}
+
 function lightingPresetReferenceIntensity(preset) {
   if (preset === "metal_booth") return 1.9;
   if (preset === "glass_clean") return 2.2;
@@ -2586,8 +2693,8 @@ function createFakeEnvironmentMap(T, renderer, settings) {
   if (!renderer) return null;
   const environment = createEnvironmentPresetConfig(settings.environmentPreset);
   const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 128;
+  canvas.width = THREE_D_ENVIRONMENT_WIDTH;
+  canvas.height = THREE_D_ENVIRONMENT_HEIGHT;
   const context = canvas.getContext("2d");
   if (!context) return null;
   const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
@@ -2603,11 +2710,18 @@ function createFakeEnvironmentMap(T, renderer, settings) {
 
   const texture = new T.CanvasTexture(canvas);
   texture.mapping = T.EquirectangularReflectionMapping;
-  const generator = new T.PMREMGenerator(renderer);
-  const envTarget = generator.fromEquirectangular(texture);
-  texture.dispose();
-  generator.dispose();
-  return envTarget;
+  let generator = null;
+  try {
+    generator = new T.PMREMGenerator(renderer);
+    return generator.fromEquirectangular(texture);
+  } catch (error) {
+    return null;
+  } finally {
+    texture.dispose();
+    if (generator && typeof generator.dispose === "function") {
+      generator.dispose();
+    }
+  }
 }
 
 function shouldEnableThreeDEnvironment(settings) {
