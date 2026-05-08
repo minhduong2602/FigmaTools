@@ -141,6 +141,12 @@ function threeDStageStyle(source, large) {
 function configureThreeDRenderer(T, renderer, useDevicePixelRatio, settings) {
   if (!renderer) return;
   renderer.setPixelRatio(useDevicePixelRatio ? Math.min(window.devicePixelRatio || 1, 1.25) : 1);
+  if (renderer.shadowMap) {
+    renderer.shadowMap.enabled = true;
+    if (T && T.PCFSoftShadowMap !== undefined) {
+      renderer.shadowMap.type = T.PCFSoftShadowMap;
+    }
+  }
   if ("outputColorSpace" in renderer && T.SRGBColorSpace) {
     renderer.outputColorSpace = T.SRGBColorSpace;
   }
@@ -222,6 +228,15 @@ function threeSectionContent(settings, source, relinkDisabled) {
       '<div class="three-grid two-col-grid">',
       threeNumberField("ambient", "Ambient Light", settings.ambient, undefined, undefined, "0.05"),
       threeNumberField("environmentStrength", "Env Intensity", settings.environmentStrength, undefined, undefined, "0.05"),
+      '</div>',
+      '<div class="three-block-subhead">Rig Balance</div>',
+      '<div class="three-grid two-col-grid">',
+      threeSliderField("hemiStrength", "Hemi", settings.hemiStrength, "0", "3", "0.05"),
+      threeSliderField("fillStrength", "Fill", settings.fillStrength, "0", "3", "0.05"),
+      threeSliderField("rimStrength", "Rim", settings.rimStrength, "0", "3", "0.05"),
+      threeSliderField("extraSpotStrength", "Extra Spot", settings.extraSpotStrength, "0", "3", "0.05"),
+      threeSliderField("extraPointStrength", "Extra Point", settings.extraPointStrength, "0", "3", "0.05"),
+      '<div></div>',
       '</div>',
       '<div class="three-block-subhead">Main Light</div>',
       '<div class="three-light-type-row">',
@@ -1498,8 +1513,9 @@ function buildExtrudeObject(lib, data, settings) {
     const shapes = lib.SVGLoader.createShapes(path);
     shapes.forEach(function (shape) {
       const geometry = new T.ExtrudeGeometry(shape, buildExtrudeSettings(settings));
-      geometry.computeVertexNormals();
+      finalizeThreeDGeometry(geometry);
       const mesh = new T.Mesh(geometry, createThreeDMaterialSet(T, path, settings, true));
+      enableThreeDMeshShadow(mesh);
       group.add(mesh);
     });
   });
@@ -1520,12 +1536,13 @@ function buildInflateObject(lib, data, settings) {
         bevelSize: Math.max(0.1, amount * profileMultiplier(settings.bevelProfile, "size", 0.55)),
         bevelThickness: Math.max(0.1, amount * profileMultiplier(settings.bevelProfile, "thickness", 1)),
         bevelOffset: Math.max(-amount, Math.min(amount, settings.bevelOffset || 0)),
-        bevelSegments: Math.max(2, Math.round(settings.bevelSegments + 2 + profileMultiplier(settings.bevelProfile, "segments", 0))),
-        curveSegments: 30,
-        steps: 1
+        bevelSegments: Math.max(5, Math.round(settings.bevelSegments + 5 + profileMultiplier(settings.bevelProfile, "segments", 0))),
+        curveSegments: Math.max(48, Math.round(36 + settings.bevelSegments * 2.5)),
+        steps: 2
       });
-      geometry.computeVertexNormals();
+      finalizeThreeDGeometry(geometry);
       const mesh = new T.Mesh(geometry, createThreeDMaterialSet(T, path, settings, true));
+      enableThreeDMeshShadow(mesh);
       group.add(mesh);
     });
   });
@@ -1536,9 +1553,11 @@ function buildInflateObject(lib, data, settings) {
 function buildRevolveObject(T, data, settings) {
   const profile = collectRevolvePoints(T, data, settings);
   if (!profile || profile.length < 3) return null;
-  const geometry = new T.LatheGeometry(profile, Math.max(8, Math.round(settings.revolveSegments)), 0, T.MathUtils.degToRad(Math.max(1, settings.revolveAngle)));
-  geometry.computeVertexNormals();
+  const radialSegments = Math.max(32, Math.round((settings.revolveSegments || 0) * 1.5));
+  const geometry = new T.LatheGeometry(profile, radialSegments, 0, T.MathUtils.degToRad(Math.max(1, settings.revolveAngle)));
+  finalizeThreeDGeometry(geometry);
   const mesh = new T.Mesh(geometry, threeDMaterialForPath(T, data.paths[0], settings, "base"));
+  enableThreeDMeshShadow(mesh);
   return mesh;
 }
 
@@ -1546,7 +1565,7 @@ function collectRevolvePoints(T, data, settings) {
   if (!data.paths || !data.paths.length) return null;
   const path = data.paths[0];
   if (!path.subPaths || !path.subPaths.length) return null;
-  const rawPoints = path.subPaths[0].getPoints(96);
+  const rawPoints = path.subPaths[0].getPoints(160);
   if (!rawPoints || rawPoints.length < 3) return null;
   let minX = Infinity;
   let minY = Infinity;
@@ -1591,9 +1610,31 @@ function createThreeDMaterialSet(T, path, settings, allowSideMaterial) {
   return threeDMaterialForPath(T, path, settings, "base");
 }
 
+function finalizeThreeDGeometry(geometry) {
+  if (!geometry) return geometry;
+  if (typeof geometry.deleteAttribute === "function" && geometry.getAttribute && geometry.getAttribute("normal")) {
+    geometry.deleteAttribute("normal");
+  }
+  if (typeof geometry.computeVertexNormals === "function") {
+    geometry.computeVertexNormals();
+  }
+  if (geometry.attributes && geometry.attributes.normal && typeof geometry.attributes.normal.needsUpdate !== "undefined") {
+    geometry.attributes.normal.needsUpdate = true;
+  }
+  return geometry;
+}
+
+function enableThreeDMeshShadow(mesh) {
+  if (!mesh) return mesh;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 function threeDMaterialForPath(T, path, settings, variant) {
   const baseVariant = variant || "base";
   const color = settings.useSourceColor && path && path.color ? path.color : new T.Color(settings.color);
+  const rigStrength = resolveThreeDLightingRigStrength(settings);
   const materialConfig = {
     color: color,
     roughness: clampThreeDValue(settings.roughness, 0, 1),
@@ -1609,7 +1650,7 @@ function threeDMaterialForPath(T, path, settings, variant) {
     iridescenceIOR: clampThreeDValue(settings.iridescenceIOR || 1.3, 1, 2.5),
     sheen: clampThreeDValue(settings.sheen || 0, 0, 1),
     sheenRoughness: clampThreeDValue(settings.sheenRoughness || 0, 0, 1),
-    envMapIntensity: Math.max(0, Number(settings.environmentStrength) || 0),
+    envMapIntensity: Math.max(0, Number(settings.environmentStrength) || 0) * rigStrength,
     flatShading: settings.flatShading === true,
     side: T.DoubleSide
   };
@@ -2049,15 +2090,20 @@ function cloneThreeDSettings() {
 function buildExtrudeSettings(settings) {
   const sizeBase = Math.max(0, settings.bevelSize);
   const thicknessBase = Math.max(0, settings.bevelThickness);
+  const bevelEnabled = sizeBase > 0 || thicknessBase > 0;
+  const bevelSegments = bevelEnabled
+    ? Math.max(4, Math.round(settings.bevelSegments + 2 + profileMultiplier(settings.bevelProfile, "segments", 0)))
+    : 0;
+  const curveSegments = Math.max(40, Math.round(28 + settings.bevelSegments * 2.5));
   return {
     depth: Math.max(0.1, settings.depth),
-    bevelEnabled: sizeBase > 0 || thicknessBase > 0,
+    bevelEnabled: bevelEnabled,
     bevelSize: Math.max(0, sizeBase * profileMultiplier(settings.bevelProfile, "size", 1)),
     bevelThickness: Math.max(0, thicknessBase * profileMultiplier(settings.bevelProfile, "thickness", 1)),
     bevelOffset: clampThreeDValue(settings.bevelOffset || 0, -80, 80) + profileMultiplier(settings.bevelProfile, "offset", 0),
-    bevelSegments: Math.max(0, Math.round(settings.bevelSegments + profileMultiplier(settings.bevelProfile, "segments", 0))),
-    curveSegments: 24,
-    steps: 1
+    bevelSegments: bevelSegments,
+    curveSegments: curveSegments,
+    steps: bevelEnabled ? 2 : 1
   };
 }
 
@@ -2260,13 +2306,19 @@ function applyThreeDLightingPreset(preset) {
 
 function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
   const lighting = createLightingPresetConfig(settings.lightingPreset);
+  const rigStrength = resolveThreeDLightingRigStrength(settings);
+  const hemiStrength = Math.max(0, settings.hemiStrength === undefined ? 1 : (Number(settings.hemiStrength) || 0));
+  const fillStrength = Math.max(0, settings.fillStrength === undefined ? 1 : (Number(settings.fillStrength) || 0));
+  const rimStrength = Math.max(0, settings.rimStrength === undefined ? 1 : (Number(settings.rimStrength) || 0));
+  const extraSpotStrength = Math.max(0, settings.extraSpotStrength === undefined ? 1 : (Number(settings.extraSpotStrength) || 0));
+  const extraPointStrength = Math.max(0, settings.extraPointStrength === undefined ? 1 : (Number(settings.extraPointStrength) || 0));
   const target = new T.Object3D();
   target.position.set(0, 0, 0);
   scene.add(target);
-  const ambient = new T.AmbientLight(0xffffff, Math.max(0, settings.ambient) * lighting.ambientScale);
+  const ambient = new T.AmbientLight(0xffffff, Math.max(0, settings.ambient) * lighting.ambientScale * rigStrength);
   scene.add(ambient);
 
-  const hemi = new T.HemisphereLight(lighting.sky, lighting.ground, lighting.hemiIntensity);
+  const hemi = new T.HemisphereLight(lighting.sky, lighting.ground, lighting.hemiIntensity * rigStrength * hemiStrength);
   scene.add(hemi);
   const keyIntensity = Math.max(0, settings.directional) * lighting.keyScale;
   const lightType = settings.lightType || "directional";
@@ -2275,6 +2327,7 @@ function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
   if (lightType === "point") {
     key = new T.PointLight(lighting.keyColor, keyIntensity, 0, Math.max(1.2, 1 + softness * 2.6));
     key.position.set(settings.lightX, settings.lightY, settings.lightZ);
+    configureThreeDKeyShadow(T, key, settings, "point");
     scene.add(key);
   } else if (lightType === "spot") {
     key = new T.SpotLight(
@@ -2286,39 +2339,41 @@ function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
       1
     );
     key.position.set(settings.lightX, settings.lightY, settings.lightZ);
+    configureThreeDKeyShadow(T, key, settings, "spot");
     key.target = target;
     scene.add(key);
     scene.add(key.target);
   } else {
     key = new T.DirectionalLight(lighting.keyColor, keyIntensity);
     key.position.set(settings.lightX, settings.lightY, settings.lightZ);
+    configureThreeDKeyShadow(T, key, settings, "directional");
     key.target = target;
     scene.add(key);
     scene.add(key.target);
   }
 
-  const fill = new T.DirectionalLight(lighting.fillColor, Math.max(0, settings.directional) * lighting.fillScale);
+  const fill = new T.DirectionalLight(lighting.fillColor, Math.max(0, settings.directional) * lighting.fillScale * fillStrength);
   fill.position.set(-settings.lightX * 0.9, Math.max(0.6, settings.lightY * 0.55), settings.lightZ * 0.6);
   fill.target = target;
   scene.add(fill);
   scene.add(fill.target);
 
-  const rim = new T.DirectionalLight(lighting.rimColor, Math.max(0, settings.directional) * lighting.rimScale);
+  const rim = new T.DirectionalLight(lighting.rimColor, Math.max(0, settings.directional) * lighting.rimScale * rimStrength);
   rim.position.set(settings.lightX * -0.35, -settings.lightY * 0.4, -Math.max(1, settings.lightZ));
   rim.target = target;
   scene.add(rim);
   scene.add(rim.target);
 
-  if (lighting.spotScale) {
-    const spot = new T.SpotLight(lighting.spotColor || 0xffffff, Math.max(0, settings.directional) * lighting.spotScale, 0, 0.72, 0.18 + softness * 0.42, 1);
+  if (lighting.spotScale && extraSpotStrength > 0) {
+    const spot = new T.SpotLight(lighting.spotColor || 0xffffff, Math.max(0, settings.directional) * lighting.spotScale * extraSpotStrength, 0, 0.72, 0.18 + softness * 0.42, 1);
     spot.position.set(settings.lightX * 0.45, Math.max(1.2, settings.lightY * 1.2), Math.max(2, settings.lightZ * 1.25));
     spot.target = target;
     scene.add(spot);
     scene.add(spot.target);
   }
 
-  if (lighting.pointScale) {
-    const point = new T.PointLight(lighting.pointColor || 0xffffff, Math.max(0, settings.directional) * lighting.pointScale, 0, 2);
+  if (lighting.pointScale && extraPointStrength > 0) {
+    const point = new T.PointLight(lighting.pointColor || 0xffffff, Math.max(0, settings.directional) * lighting.pointScale * extraPointStrength, 0, 2);
     point.position.set(-settings.lightX * 0.85, Math.max(0.6, settings.lightY * 0.75), Math.max(1.2, settings.lightZ * 0.45));
     scene.add(point);
   }
@@ -2331,6 +2386,44 @@ function applyThreeDLighting(T, renderer, scene, settings, trackEnvironment) {
     }
   }
   return environment;
+}
+
+function configureThreeDKeyShadow(T, light, settings, lightType) {
+  if (!light) return;
+  light.castShadow = true;
+  if (light.shadow) {
+    if (light.shadow.mapSize) {
+      light.shadow.mapSize.width = 1024;
+      light.shadow.mapSize.height = 1024;
+    }
+    light.shadow.bias = -0.00015;
+    if (typeof light.shadow.normalBias !== "undefined") {
+      light.shadow.normalBias = 0.02;
+    }
+    if (light.shadow.camera) {
+      if (lightType === "directional") {
+        light.shadow.camera.left = -260;
+        light.shadow.camera.right = 260;
+        light.shadow.camera.top = 260;
+        light.shadow.camera.bottom = -260;
+        light.shadow.camera.near = 0.5;
+        light.shadow.camera.far = 1600;
+      } else if (lightType === "spot") {
+        light.shadow.camera.near = 0.5;
+        light.shadow.camera.far = 1600;
+      } else if (lightType === "point") {
+        light.shadow.camera.near = 0.5;
+        light.shadow.camera.far = 1600;
+      }
+      if (typeof light.shadow.camera.updateProjectionMatrix === "function") {
+        light.shadow.camera.updateProjectionMatrix();
+      }
+    }
+    if (typeof light.shadow.radius !== "undefined") {
+      const softness = clampThreeDValue(settings.lightSoftness || 0, 0, 100) / 100;
+      light.shadow.radius = 1 + softness * 5;
+    }
+  }
 }
 
 function createLightingPresetConfig(preset) {
@@ -2424,6 +2517,21 @@ function createLightingPresetConfig(preset) {
   };
 }
 
+function resolveThreeDLightingRigStrength(settings) {
+  const current = Math.max(0, Number(settings && settings.directional) || 0);
+  const reference = lightingPresetReferenceIntensity(settings && settings.lightingPreset);
+  if (reference <= 0) return current;
+  return Math.max(0, current / reference);
+}
+
+function lightingPresetReferenceIntensity(preset) {
+  if (preset === "metal_booth") return 1.9;
+  if (preset === "glass_clean") return 2.2;
+  if (preset === "sunset") return 1.35;
+  if (preset === "night_neon") return 1.5;
+  return 1.15;
+}
+
 function createEnvironmentPresetConfig(preset) {
   if (preset === "chrome_booth") {
     return {
@@ -2474,6 +2582,7 @@ function createEnvironmentPresetConfig(preset) {
 }
 
 function createFakeEnvironmentMap(T, renderer, settings) {
+  if (!shouldEnableThreeDEnvironment(settings)) return null;
   if (!renderer) return null;
   const environment = createEnvironmentPresetConfig(settings.environmentPreset);
   const canvas = document.createElement("canvas");
@@ -2499,6 +2608,12 @@ function createFakeEnvironmentMap(T, renderer, settings) {
   texture.dispose();
   generator.dispose();
   return envTarget;
+}
+
+function shouldEnableThreeDEnvironment(settings) {
+  const envStrength = Math.max(0, Number(settings && settings.environmentStrength) || 0);
+  const rigStrength = resolveThreeDLightingRigStrength(settings);
+  return envStrength > 0.001 && rigStrength > 0.001;
 }
 
 function syncThreeDFieldInputs(keys) {
